@@ -1,7 +1,7 @@
 //! Inbox 用例：快速收集 + 后续整理（转 Task / 转 Note）。
 
 use dashboard_domain::{Actor, InboxItem};
-use dashboard_storage::{inbox_repo, note_repo, task_repo};
+use dashboard_storage::{inbox_repo, note_repo};
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -42,19 +42,21 @@ pub struct ProcessReport {
     pub created_id: String,
 }
 
-/// 将 Inbox 条目转为 Task。
-pub fn process_to_task(
-    conn: &Connection,
-    id: &str,
-    due_at: Option<chrono::DateTime<chrono::Utc>>,
-    actor: Actor,
-) -> CoreResult<ProcessReport> {
+/// 将 Inbox 条目转为 Task（打卡体系：默认目标 1、卡片样式 day）。
+pub fn process_to_task(conn: &Connection, id: &str, actor: Actor) -> CoreResult<ProcessReport> {
     let item =
         inbox_repo::get(conn, id)?.ok_or_else(|| CoreError::NotFound(format!("inbox {id}")))?;
     if item.status == dashboard_domain::InboxStatus::Processed {
         return Err(CoreError::Conflict(format!("inbox {id} 已处理")));
     }
-    let task = task_repo::create(conn, &item.content, due_at, None)?;
+    let task = crate::task_service::create_task(
+        conn,
+        &crate::task_service::CreateTaskInput {
+            title: item.content.clone(),
+            ..Default::default()
+        },
+        actor.clone(),
+    )?;
     inbox_repo::set_status(conn, id, dashboard_domain::InboxStatus::Processed)?;
     log_activity(
         conn,

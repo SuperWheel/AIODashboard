@@ -3,9 +3,14 @@
 //! Application 层：所有业务用例的唯一实现。
 //! GUI（Tauri Command）、CLI、AI 都只能通过本 crate 操作数据。
 
+pub mod checkin_service;
 pub mod context_service;
+pub mod day_state;
 pub mod inbox_service;
+pub mod library_service;
+pub mod logical_day;
 pub mod note_service;
+pub mod overview_service;
 pub mod plugin_manifest;
 pub mod plugin_service;
 pub mod project_service;

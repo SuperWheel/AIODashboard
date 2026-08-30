@@ -14,6 +14,11 @@ pub mod id_prefix {
     pub const NOTE: &str = "not";
     pub const INBOX: &str = "inb";
     pub const ACTIVITY: &str = "act";
+    pub const COMPLETION: &str = "cmp";
+    pub const TARGET_PERIOD: &str = "tgp";
+    pub const ACTIVITY_PERIOD: &str = "tvp";
+    pub const DATE_LIBRARY: &str = "dlb";
+    pub const MEMBERSHIP_PERIOD: &str = "msp";
 }
 
 /// 生成带前缀的 UUIDv7（时间有序）。
@@ -77,43 +82,242 @@ impl<'de> Deserialize<'de> for Actor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
-    Todo,
-    Doing,
-    Done,
+    Active,
+    Archived,
 }
 
 impl TaskStatus {
     pub fn as_str(self) -> &'static str {
         match self {
-            TaskStatus::Todo => "todo",
-            TaskStatus::Doing => "doing",
-            TaskStatus::Done => "done",
+            TaskStatus::Active => "active",
+            TaskStatus::Archived => "archived",
         }
     }
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "todo" => Some(TaskStatus::Todo),
-            "doing" => Some(TaskStatus::Doing),
-            "done" => Some(TaskStatus::Done),
+            "active" => Some(TaskStatus::Active),
+            "archived" => Some(TaskStatus::Archived),
             _ => None,
         }
     }
 }
+
+/// 任务卡片样式偏好（每任务持久化）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardStyle {
+    #[default]
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
+impl CardStyle {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CardStyle::Day => "day",
+            CardStyle::Week => "week",
+            CardStyle::Month => "month",
+            CardStyle::Year => "year",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "day" => Some(CardStyle::Day),
+            "week" => Some(CardStyle::Week),
+            "month" => Some(CardStyle::Month),
+            "year" => Some(CardStyle::Year),
+            _ => None,
+        }
+    }
+}
+
+/// 任务主题色预设（hex）。前端用 color-mix 做色阶，双主题下不翻转。
+pub const TASK_COLOR_PRESETS: [&str; 6] = [
+    "#4A90E2", // 海蓝
+    "#38A38A", // 青绿
+    "#69A84F", // 草绿
+    "#E49345", // 暖橙
+    "#D96767", // 珊瑚
+    "#8067C8", // 紫罗兰
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
     pub title: String,
     pub status: TaskStatus,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub due_at: Option<DateTime<Utc>>,
+    /// 图标或 Emoji（取前 2 字符展示）
+    #[serde(default)]
+    pub icon: String,
+    /// 主题色 hex（预设之一）
+    #[serde(default = "default_color_hex")]
+    pub color_hex: String,
+    /// 计数单位（次/杯/页…）
+    #[serde(default)]
+    pub unit: String,
+    #[serde(default)]
+    pub card_style: CardStyle,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+fn default_color_hex() -> String {
+    TASK_COLOR_PRESETS[0].to_string()
+}
+
+/// 打卡账本记录（append-only）。value=+1 为增加；负值为减少/撤销补偿。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionRecord {
+    pub id: String,
+    pub task_id: String,
+    /// 客户端生成的幂等键（全局唯一）
+    pub operation_id: String,
+    pub value: i64,
+    pub kind: CompletionKind,
+    /// 被补偿的正向记录 id（decrement/undo 时填写）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compensates_record_id: Option<String>,
+    /// 逻辑日（本地时区 YYYY-MM-DD）
+    pub logical_day: String,
+    /// 来源（user/cli/ai/plugin:<id>…）
+    pub source: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompletionKind {
+    Add,
+    Decrement,
+    Undo,
+}
+
+impl CompletionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CompletionKind::Add => "add",
+            CompletionKind::Decrement => "decrement",
+            CompletionKind::Undo => "undo",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "add" => Some(CompletionKind::Add),
+            "decrement" => Some(CompletionKind::Decrement),
+            "undo" => Some(CompletionKind::Undo),
+            _ => None,
+        }
+    }
+}
+
+/// 历史目标区间 [start_day, end_day)，end_day 为空 = 至今有效。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskTargetPeriod {
+    pub id: String,
+    pub task_id: String,
+    /// 每日目标次数（1–999）
+    pub target: i64,
+    pub start_day: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_day: Option<String>,
+}
+
+/// 任务活动区间 [start_day, end_day)：任务在哪些自然日有效。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskActivityPeriod {
+    pub id: String,
+    pub task_id: String,
+    pub start_day: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_day: Option<String>,
+}
+
+/// 日期主库类型：纪念日（锚点在过去/今天）/ 倒计时日（锚点在今天/未来）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LibraryKind {
+    Anniversary,
+    Countdown,
+}
+
+impl LibraryKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LibraryKind::Anniversary => "anniversary",
+            LibraryKind::Countdown => "countdown",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "anniversary" => Some(LibraryKind::Anniversary),
+            "countdown" => Some(LibraryKind::Countdown),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LibraryStatus {
+    Active,
+    Archived,
+}
+
+impl LibraryStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LibraryStatus::Active => "active",
+            LibraryStatus::Archived => "archived",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "active" => Some(LibraryStatus::Active),
+            "archived" => Some(LibraryStatus::Archived),
+            _ => None,
+        }
+    }
+}
+
+/// 日期主库（纪念日 / 倒计时日）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DateLibrary {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub note: String,
+    #[serde(default)]
+    pub icon: String,
+    #[serde(default = "default_color_hex")]
+    pub color_hex: String,
+    pub kind: LibraryKind,
+    /// 锚点日（本地 YYYY-MM-DD）
+    pub anchor_day: String,
+    #[serde(default)]
+    pub sort_order: i64,
+    pub status: LibraryStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// 任务归属区间 [start_day, end_day)：某段时间属于哪个日期主库。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MembershipPeriod {
+    pub id: String,
+    pub task_id: String,
+    pub library_id: String,
+    pub start_day: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_day: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

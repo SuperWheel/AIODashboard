@@ -65,8 +65,7 @@ impl Env {
         let conn = self.core_conn();
         let input = dashboard_core::task_service::CreateTaskInput {
             title: title.to_string(),
-            due_at: None,
-            project_id: None,
+            ..Default::default()
         };
         dashboard_core::task_service::create_task(&conn, &input, dashboard_domain::Actor::User)
             .unwrap()
@@ -104,7 +103,7 @@ fn chain_core_create_then_cli_read_json() {
     assert_eq!(code, 0);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], true);
-    assert_eq!(v["meta"]["schema_version"], "1");
+    assert_eq!(v["meta"]["schema_version"], "2");
     let items = v["data"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["id"], task.id.as_str());
@@ -114,19 +113,82 @@ fn chain_core_create_then_cli_read_json() {
 }
 
 #[test]
-fn chain_complete_and_status_sync() {
+fn chain_checkin_then_core_read() {
     let env = Env::new();
-    let task = env.core_create_task("待完成任务");
+    let task = env.core_create_task("打卡任务");
 
-    // CLI 完成（模拟 AI 通过 CLI 操作）
-    let (code, _) = env.cli(&["task", "complete", &task.id]);
+    // CLI 打卡（模拟 AI 通过 CLI 操作），幂等键重放不重复计数
+    let (code, _) = env.cli(&["task", "checkin", &task.id, "--operation-id", "op_test_1"]);
+    assert_eq!(code, 0);
+    let (code, _) = env.cli(&["task", "checkin", &task.id, "--operation-id", "op_test_1"]);
     assert_eq!(code, 0);
 
-    // GUI（Core）视角看到 done
+    // GUI（Core）视角看到今日 count=1 且已完成（默认目标 1）
     let conn = env.core_conn();
-    let t = dashboard_core::task_service::get_task(&conn, &task.id).unwrap();
-    assert_eq!(t.status, dashboard_domain::TaskStatus::Done);
-    assert!(t.completed_at.is_some());
+    let v = dashboard_core::checkin_service::task_day_view(&conn, &task.id).unwrap();
+    assert_eq!(v.count, 1);
+    assert_eq!(v.state, "completed");
+}
+
+#[test]
+fn chain_complete_compat_deprecated() {
+    let env = Env::new();
+    let task = env.core_create_task("兼容任务");
+    let (code, out) = env.cli(&["task", "complete", &task.id, "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"]["deprecated"], true);
+    assert_eq!(v["data"]["task_day"]["state"], "completed");
+}
+
+#[test]
+fn chain_library_create_move_archive() {
+    let env = Env::new();
+    let today = Env::today_str();
+    // 创建纪念日主库
+    let (code, out) = env.cli(&[
+        "library",
+        "create",
+        "--title",
+        "健身年",
+        "--kind",
+        "anniversary",
+        "--anchor",
+        &today,
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let lib_id = v["data"]["id"].as_str().unwrap().to_string();
+    assert!(lib_id.starts_with("dlb_"));
+
+    // 建任务并移入
+    let (code, out) = env.cli(&[
+        "task", "create", "--title", "深蹲", "--target", "3", "--unit", "组", "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let task_id = v["data"]["id"].as_str().unwrap().to_string();
+    let (code, out) = env.cli(&["task", "move", &task_id, "--library", &lib_id, "--json"]);
+    assert_eq!(code, 0, "{out}");
+
+    // 主库 show：直属任务 1 个
+    let (code, out) = env.cli(&["library", "show", &lib_id, "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"]["tasks"].as_array().unwrap().len(), 1);
+    assert_eq!(v["data"]["day_info"]["day_count"], 1);
+
+    // 归档 detach
+    let (code, out) = env.cli(&["library", "archive", &lib_id, "--mode", "detach", "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"]["status"], "archived");
+
+    // 任务已转独立
+    let conn = env.core_conn();
+    let view = dashboard_core::checkin_service::task_day_view(&conn, &task_id).unwrap();
+    assert!(view.library_id.is_none());
 }
 
 #[test]
@@ -182,21 +244,22 @@ fn ai_error_protocol_not_found_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "1");
+    assert_eq!(v["meta"]["schema_version"], "2");
 }
 
 #[test]
 fn context_today_envelope_and_snapshot_file() {
     let env = Env::new();
     let today = Env::today_str();
-    let (code, out) = env.cli(&["task", "create", "--title", "今日任务", "--due", &today]);
+    let _ = today; // 日期边界由 core 单测覆盖，这里只验证链路
+    let (code, out) = env.cli(&["task", "create", "--title", "今日任务", "--json"]);
     assert_eq!(code, 0, "{out}");
 
     let (code, out) = env.cli(&["context", "today", "--json"]);
     assert_eq!(code, 0);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], true);
-    assert!(v["data"]["stats"]["today_total"].as_i64().unwrap() >= 1);
+    assert!(v["data"]["stats"]["task_total"].as_i64().unwrap() >= 1);
 
     // 任务变更后 Widget Snapshot 文件已生成
     let raw = std::fs::read_to_string(&env.snap_path).unwrap();
@@ -273,7 +336,7 @@ fn plugin_unknown_id_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "1");
+    assert_eq!(v["meta"]["schema_version"], "2");
 }
 
 /// T4：manifest 非法的目录在 list 中以 error 呈现，不影响整体。
@@ -301,8 +364,7 @@ fn plugin_actor_recorded_in_activity() {
     let conn = env.core_conn();
     let input = dashboard_core::task_service::CreateTaskInput {
         title: "插件创建的任务".into(),
-        due_at: None,
-        project_id: None,
+        ..Default::default()
     };
     let task = dashboard_core::task_service::create_task(
         &conn,

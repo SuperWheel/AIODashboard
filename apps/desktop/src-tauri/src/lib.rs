@@ -37,63 +37,110 @@ fn get_today() -> R<core::context_service::TodayContext> {
     core::context_service::context_today(&c).map_err(|e| e.to_string())
 }
 
-/// scope: "all" | "open" | "done" | "today" | "overdue"
+/// scope: "all" | "active" | "archived"
 #[tauri::command]
 fn list_tasks(scope: Option<String>) -> R<Vec<Task>> {
     use dashboard_storage::task_repo::TaskQuery;
     let c = conn()?;
     let mut q = TaskQuery {
         limit: 500,
-        order_by_due: true,
         ..Default::default()
     };
     match scope.as_deref() {
-        Some("open") => q.exclude_done = true,
-        Some("done") => q.status = Some(dashboard_domain::TaskStatus::Done),
-        Some("today") => {
-            let (s, e) = core::context_service::local_today_range(chrono::Utc::now());
-            q.due_from = Some(s);
-            q.due_to = Some(e);
-            q.exclude_done = true;
-            q.limit = 200;
-        }
-        Some("overdue") => {
-            let (s, _) = core::context_service::local_today_range(chrono::Utc::now());
-            q.due_to = Some(s);
-            q.exclude_done = true;
-            q.limit = 200;
-        }
+        Some("active") => q.status = Some(dashboard_domain::TaskStatus::Active),
+        Some("archived") => q.status = Some(dashboard_domain::TaskStatus::Archived),
         _ => {}
     }
     core::task_service::list_tasks(&c, &q).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn create_task(
+#[derive(Debug, serde::Deserialize)]
+struct CreateTaskParams {
     title: String,
-    due_at: Option<String>,
+    target: Option<i64>,
+    unit: Option<String>,
+    icon: Option<String>,
+    color: Option<String>,
+    card_style: Option<String>,
     project_id: Option<String>,
+    library_id: Option<String>,
     actor: Option<String>,
-) -> R<Task> {
-    let due = match due_at.as_deref() {
-        None | Some("") | Some("null") => None,
-        Some(s) => Some(core::parse_due_input(s).map_err(|e| e.to_string())?),
-    };
-    let c = conn()?;
-    let input = core::task_service::CreateTaskInput {
-        title,
-        due_at: due,
-        project_id,
-    };
-    core::task_service::create_task(&c, &input, actor_from(actor)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn set_task_status(id: String, status: String, actor: Option<String>) -> R<Task> {
-    let st = dashboard_domain::TaskStatus::parse(&status)
-        .ok_or_else(|| format!("无效状态: {status}"))?;
+fn create_task(params: CreateTaskParams) -> R<Task> {
+    let style = match params.card_style.as_deref() {
+        Some(s) => Some(
+            dashboard_domain::CardStyle::parse(s).ok_or_else(|| format!("无效卡片样式: {s}"))?,
+        ),
+        None => None,
+    };
     let c = conn()?;
-    core::task_service::set_status(&c, &id, st, actor_from(actor)).map_err(|e| e.to_string())
+    let mut input = core::task_service::CreateTaskInput {
+        title: params.title,
+        icon: params.icon.unwrap_or_default(),
+        unit: params.unit.unwrap_or_default(),
+        project_id: params.project_id,
+        library_id: params.library_id,
+        ..Default::default()
+    };
+    if let Some(t) = params.target {
+        input.daily_target = t;
+    }
+    if let Some(col) = params.color {
+        input.color_hex = col;
+    }
+    if let Some(s) = style {
+        input.card_style = s;
+    }
+    core::task_service::create_task(&c, &input, actor_from(params.actor)).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct UpdateTaskParams {
+    id: String,
+    title: Option<String>,
+    target: Option<i64>,
+    unit: Option<String>,
+    icon: Option<String>,
+    color: Option<String>,
+    card_style: Option<String>,
+    project_id: Option<Option<String>>,
+    actor: Option<String>,
+}
+
+#[tauri::command]
+fn update_task(params: UpdateTaskParams) -> R<Task> {
+    let style = match params.card_style.as_deref() {
+        Some(s) => Some(
+            dashboard_domain::CardStyle::parse(s).ok_or_else(|| format!("无效卡片样式: {s}"))?,
+        ),
+        None => None,
+    };
+    let c = conn()?;
+    let input = core::task_service::UpdateTaskInput {
+        title: params.title,
+        icon: params.icon,
+        color_hex: params.color,
+        unit: params.unit,
+        daily_target: params.target,
+        card_style: style,
+        project_id: params.project_id,
+    };
+    core::task_service::update_task(&c, &params.id, &input, actor_from(params.actor))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn archive_task(id: String, actor: Option<String>) -> R<Task> {
+    let c = conn()?;
+    core::task_service::archive_task(&c, &id, actor_from(actor)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn restore_task(id: String, actor: Option<String>) -> R<Task> {
+    let c = conn()?;
+    core::task_service::restore_task(&c, &id, actor_from(actor)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -101,6 +148,157 @@ fn delete_task(id: String, actor: Option<String>) -> R<()> {
     let c = conn()?;
     core::task_service::delete_task(&c, &id, false, actor_from(actor))
         .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+// ---------------- Check-in ----------------
+
+#[tauri::command]
+fn task_checkin(
+    id: String,
+    operation_id: Option<String>,
+    actor: Option<String>,
+) -> R<core::checkin_service::TaskDayView> {
+    let op = operation_id.unwrap_or_else(|| dashboard_domain::new_id("op"));
+    let c = conn()?;
+    core::checkin_service::record(&c, &id, &op, actor_from(actor)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn task_decrement(
+    id: String,
+    operation_id: Option<String>,
+    actor: Option<String>,
+) -> R<core::checkin_service::TaskDayView> {
+    let op = operation_id.unwrap_or_else(|| dashboard_domain::new_id("op"));
+    let c = conn()?;
+    core::checkin_service::decrement(&c, &id, &op, actor_from(actor)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn task_undo(
+    id: String,
+    operation_id: Option<String>,
+    actor: Option<String>,
+) -> R<core::checkin_service::TaskDayView> {
+    let op = operation_id.unwrap_or_else(|| dashboard_domain::new_id("op"));
+    let c = conn()?;
+    core::checkin_service::undo(&c, &id, &op, actor_from(actor)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn task_overview(
+    id: String,
+    period: String,
+    anchor: Option<String>,
+) -> R<core::overview_service::PeriodOverview> {
+    let c = conn()?;
+    core::overview_service::task_period_overview(&c, &id, &period, anchor.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+// ---------------- Date Libraries ----------------
+
+#[tauri::command]
+fn list_libraries(
+    include_archived: Option<bool>,
+) -> R<Vec<core::library_service::LibraryListItem>> {
+    let c = conn()?;
+    core::library_service::list_library_items(&c, include_archived.unwrap_or(false))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_library(
+    title: String,
+    kind: String,
+    anchor_day: String,
+    note: Option<String>,
+    icon: Option<String>,
+    color: Option<String>,
+    actor: Option<String>,
+) -> R<dashboard_domain::DateLibrary> {
+    let k = dashboard_domain::LibraryKind::parse(&kind)
+        .ok_or_else(|| format!("无效主库类型: {kind}"))?;
+    let c = conn()?;
+    let input = core::library_service::CreateLibraryInput {
+        title,
+        note: note.unwrap_or_default(),
+        icon: icon.unwrap_or_default(),
+        color_hex: color.unwrap_or_else(|| "#4A90E2".into()),
+        kind: k,
+        anchor_day,
+    };
+    core::library_service::create_library(&c, &input, actor_from(actor)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_library(
+    id: String,
+    title: Option<String>,
+    note: Option<String>,
+    icon: Option<String>,
+    color: Option<String>,
+    anchor_day: Option<String>,
+    actor: Option<String>,
+) -> R<dashboard_domain::DateLibrary> {
+    let c = conn()?;
+    let input = core::library_service::UpdateLibraryInput {
+        title,
+        note,
+        icon,
+        color_hex: color,
+        anchor_day,
+    };
+    core::library_service::update_library(&c, &id, &input, actor_from(actor))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn archive_library(
+    id: String,
+    mode: String,
+    move_to: Option<String>,
+    actor: Option<String>,
+) -> R<dashboard_domain::DateLibrary> {
+    let m = match mode.as_str() {
+        "keep" => core::library_service::ArchiveTaskMode::Keep,
+        "detach" => core::library_service::ArchiveTaskMode::Detach,
+        "move_to" | "move-to" => core::library_service::ArchiveTaskMode::MoveTo,
+        _ => return Err(format!("无效 mode: {mode}（keep|detach|move_to）")),
+    };
+    let c = conn()?;
+    core::library_service::archive_library(&c, &id, m, move_to.as_deref(), actor_from(actor))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn restore_library(id: String, actor: Option<String>) -> R<dashboard_domain::DateLibrary> {
+    let c = conn()?;
+    core::library_service::restore_library(&c, &id, actor_from(actor)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn library_tasks(library_id: String) -> R<Vec<Task>> {
+    let c = conn()?;
+    core::library_service::library_tasks(&c, &library_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn library_heatmap(
+    library_id: String,
+    anchor: Option<String>,
+) -> R<core::overview_service::LibraryYearHeatmap> {
+    let c = conn()?;
+    core::overview_service::library_year_heatmap(&c, &library_id, anchor.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// 移动任务到主库（library_id=None = 移出为独立任务）。
+#[tauri::command]
+fn move_task_library(id: String, library_id: Option<String>, actor: Option<String>) -> R<Task> {
+    let c = conn()?;
+    core::library_service::move_task(&c, &id, library_id.as_deref(), actor_from(actor))
         .map_err(|e| e.to_string())
 }
 
@@ -183,7 +381,7 @@ fn add_inbox_item(content: String, actor: Option<String>) -> R<dashboard_domain:
 #[tauri::command]
 fn inbox_to_task(id: String) -> R<core::inbox_service::ProcessReport> {
     let c = conn()?;
-    core::inbox_service::process_to_task(&c, &id, None, actor()).map_err(|e| e.to_string())
+    core::inbox_service::process_to_task(&c, &id, actor()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -391,8 +589,22 @@ pub fn run() {
             get_today,
             list_tasks,
             create_task,
-            set_task_status,
+            update_task,
+            archive_task,
+            restore_task,
             delete_task,
+            task_checkin,
+            task_decrement,
+            task_undo,
+            task_overview,
+            list_libraries,
+            create_library,
+            update_library,
+            archive_library,
+            restore_library,
+            library_tasks,
+            library_heatmap,
+            move_task_library,
             list_projects,
             create_project,
             archive_project,

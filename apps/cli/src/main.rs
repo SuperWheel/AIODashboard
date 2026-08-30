@@ -12,14 +12,14 @@ mod util;
 
 use std::io::Read;
 
-use chrono::Utc;
 use clap::{Parser, Subcommand};
 use dashboard_core::{
-    context_service, inbox_service, note_service, plugin_manifest, plugin_service, project_service,
-    search_service, task_service,
+    checkin_service, context_service, inbox_service, library_service, note_service,
+    overview_service, plugin_manifest, plugin_service, project_service, search_service,
+    task_service,
 };
 use dashboard_core::{CoreError, CoreResult};
-use dashboard_domain::{Actor, TaskStatus};
+use dashboard_domain::{Actor, CardStyle, LibraryKind, TaskStatus};
 use dashboard_protocol::{Envelope, ExitCode};
 use dashboard_storage as ds;
 use serde_json::{json, Value};
@@ -46,6 +46,11 @@ enum Commands {
     Task {
         #[command(subcommand)]
         cmd: TaskCmd,
+    },
+    /// 日期主库（纪念日 / 倒计时日）
+    Library {
+        #[command(subcommand)]
+        cmd: LibraryCmd,
     },
     /// 项目管理
     Project {
@@ -89,10 +94,7 @@ enum Commands {
 enum TaskCmd {
     /// 列出任务
     List {
-        #[arg(long)]
-        today: bool,
-        #[arg(long)]
-        overdue: bool,
+        /// 只看启用中 / 已归档
         #[arg(long)]
         status: Option<String>,
         #[arg(long)]
@@ -100,52 +102,168 @@ enum TaskCmd {
         #[arg(long, default_value_t = 100)]
         limit: i64,
     },
-    /// 查看单个任务
+    /// 查看单个任务（含今日打卡状态）
     Show { id: String },
-    /// 创建任务
+    /// 创建任务（长期打卡对象）
     Create {
         #[arg(short, long)]
         title: Option<String>,
-        /// YYYY-MM-DD 或 RFC3339
+        /// 每日目标次数（1–999）
         #[arg(long)]
-        due: Option<String>,
+        target: Option<i64>,
+        /// 计数单位（次/杯/页…）
+        #[arg(long)]
+        unit: Option<String>,
+        /// 图标或 Emoji
+        #[arg(long)]
+        icon: Option<String>,
+        /// 主题色 #RRGGBB（预设 6 色之一或合法 hex）
+        #[arg(long)]
+        color: Option<String>,
+        /// 卡片样式 day|week|month|year
+        #[arg(long = "card-style")]
+        card_style: Option<String>,
         #[arg(long)]
         project: Option<String>,
-        /// 从 stdin 读取 JSON：{"title":..., "due":..., "project":...}
+        /// 创建时归入的日期主库
+        #[arg(long)]
+        library: Option<String>,
+        /// 从 stdin 读取 JSON：{"title":..., "target":..., "unit":...}
         #[arg(long)]
         stdin: bool,
     },
-    /// 更新任务
+    /// 更新任务（目标修改从明天起生效）
     Update {
         id: String,
         #[arg(long)]
         title: Option<String>,
         #[arg(long)]
-        due: Option<String>,
-        #[arg(long = "clear-due")]
-        clear_due: bool,
+        target: Option<i64>,
         #[arg(long)]
-        status: Option<String>,
+        unit: Option<String>,
+        #[arg(long)]
+        icon: Option<String>,
+        #[arg(long)]
+        color: Option<String>,
+        #[arg(long = "card-style")]
+        card_style: Option<String>,
         #[arg(long)]
         project: Option<String>,
         #[arg(long = "clear-project")]
         clear_project: bool,
     },
-    /// 标记完成
+    /// 打卡 +1（幂等：--operation-id 重放不重复计数）
+    Checkin {
+        id: String,
+        /// 幂等键；缺省自动生成
+        #[arg(long = "operation-id")]
+        operation_id: Option<String>,
+    },
+    /// 减少一次（补偿当日最近一次打卡）
+    Decrement {
+        id: String,
+        #[arg(long = "operation-id")]
+        operation_id: Option<String>,
+    },
+    /// 撤销最近一次打卡
+    Undo {
+        id: String,
+        #[arg(long = "operation-id")]
+        operation_id: Option<String>,
+    },
+    /// 周期总览（周/月/年热力图数据）
+    Overview {
+        id: String,
+        #[arg(long, default_value = "week")]
+        period: String,
+        /// 锚点逻辑日 YYYY-MM-DD（缺省今天）
+        #[arg(long)]
+        anchor: Option<String>,
+    },
+    /// 归档任务（停止打卡，历史保留）
+    Archive { id: String },
+    /// 恢复已归档任务
+    Restore { id: String },
+    /// [deprecated] 等价于补满今日目标，请改用 checkin
     Complete { id: String },
-    /// 重新打开
+    /// [deprecated] 等价于今日清零，请改用 decrement/undo
     Reopen { id: String },
+    /// 移动任务到日期主库（今日起生效；--clear 移出为独立任务）
+    Move {
+        id: String,
+        #[arg(long)]
+        library: Option<String>,
+        #[arg(long)]
+        clear: bool,
+    },
     /// 删除任务
     Delete {
         id: String,
         #[arg(long)]
         dry_run: bool,
     },
-    /// 清理全部已完成任务
-    ClearCompleted {
+    /// 清理全部已归档任务
+    ClearArchived {
         #[arg(long)]
         dry_run: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum LibraryCmd {
+    /// 创建日期主库
+    Create {
+        #[arg(short, long)]
+        title: Option<String>,
+        /// anniversary（纪念日，锚点 ≤ 今天）| countdown（倒计时日，锚点 ≥ 今天）
+        #[arg(long)]
+        kind: String,
+        /// 锚点日 YYYY-MM-DD
+        #[arg(long)]
+        anchor: String,
+        #[arg(long, default_value_t = String::new())]
+        note: String,
+        #[arg(long, default_value_t = String::new())]
+        icon: String,
+        #[arg(long)]
+        color: Option<String>,
+        /// 从 stdin 读取 JSON
+        #[arg(long)]
+        stdin: bool,
+    },
+    /// 列出主库
+    List {
+        #[arg(long = "all")]
+        include_archived: bool,
+    },
+    /// 查看主库（含天数、直属任务、年度热力图）
+    Show { id: String },
+    /// 更新主库
+    Update {
+        id: String,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        note: Option<String>,
+        #[arg(long)]
+        icon: Option<String>,
+        #[arg(long)]
+        color: Option<String>,
+        #[arg(long)]
+        anchor: Option<String>,
+    },
+    /// 归档主库（必须选择直属任务处置方式）
+    Archive {
+        id: String,
+        /// keep=保留归属 / detach=转独立 / move-to=移到其他主库
+        #[arg(long)]
+        mode: String,
+        /// mode=move-to 时的目标主库 id
+        #[arg(long)]
+        to: Option<String>,
+    },
+    /// 恢复已归档主库
+    Restore { id: String },
 }
 
 #[derive(Subcommand)]
@@ -384,6 +502,7 @@ fn main() {
 fn dispatch(cmd: Commands) -> CoreResult<Out> {
     match cmd {
         Commands::Task { cmd } => task_cmd(cmd),
+        Commands::Library { cmd } => library_cmd(cmd),
         Commands::Project { cmd } => project_cmd(cmd),
         Commands::Note { cmd } => note_cmd(cmd),
         Commands::Inbox { cmd } => inbox_cmd(cmd),
@@ -433,52 +552,64 @@ fn dispatch(cmd: Commands) -> CoreResult<Out> {
     }
 }
 
-// ---------------- Task ----------------
+// ---------------- Task / Library ----------------
 
 fn task_table(tasks: &[dashboard_domain::Task]) -> String {
-    use output::fmt_due;
+    let header = ["ID", "STATUS", "CARD", "TITLE"];
     let rows: Vec<Vec<String>> = tasks
         .iter()
         .map(|t| {
             vec![
                 t.id.clone(),
                 t.status.as_str().to_string(),
-                fmt_due(t.due_at),
+                t.card_style.as_str().to_string(),
                 output::trunc(&t.title, 40),
             ]
         })
         .collect();
-    let mut buf = Vec::new();
-    // 简单复用：print_table 直接打印 stdout，这里手动拼装
-    let header = ["ID", "STATUS", "DUE", "TITLE"];
-    let ncols = 4;
     let mut widths = header.iter().map(|h| h.len()).collect::<Vec<_>>();
     for row in &rows {
-        for (i, cell) in row.iter().enumerate().take(ncols) {
+        for (i, cell) in row.iter().enumerate() {
             widths[i] = widths[i].max(cell.chars().count());
         }
     }
-    let head: String = header
-        .iter()
-        .enumerate()
-        .map(|(i, h)| format!("{:<width$}  ", h, width = widths[i]))
-        .collect();
-    buf.push(head.trim_end().to_string());
-    for row in &rows {
-        let line: String = row
+    let mut buf = Vec::new();
+    buf.push(
+        header
             .iter()
             .enumerate()
-            .take(ncols)
-            .map(|(i, cell)| format!("{:<width$}  ", cell, width = widths[i]))
-            .collect();
-        buf.push(line.trim_end().to_string());
+            .map(|(i, h)| format!("{:<width$}  ", h, width = widths[i]))
+            .collect::<String>()
+            .trim_end()
+            .to_string(),
+    );
+    for row in &rows {
+        buf.push(
+            row.iter()
+                .enumerate()
+                .map(|(i, cell)| format!("{:<width$}  ", cell, width = widths[i]))
+                .collect::<String>()
+                .trim_end()
+                .to_string(),
+        );
     }
     buf.join("\n")
 }
 
-fn parse_status(s: &str) -> CoreResult<TaskStatus> {
+fn parse_task_status(s: &str) -> CoreResult<TaskStatus> {
     TaskStatus::parse(s)
-        .ok_or_else(|| CoreError::Validation(format!("无效状态 '{s}'（支持 todo/doing/done）")))
+        .ok_or_else(|| CoreError::Validation(format!("无效状态 '{s}'（支持 active/archived）")))
+}
+
+fn parse_card_style(s: &str) -> CoreResult<CardStyle> {
+    CardStyle::parse(s)
+        .ok_or_else(|| CoreError::Validation(format!("无效卡片样式 '{s}'（day|week|month|year）")))
+}
+
+fn parse_library_kind(s: &str) -> CoreResult<LibraryKind> {
+    LibraryKind::parse(s).ok_or_else(|| {
+        CoreError::Validation(format!("无效主库类型 '{s}'（anniversary|countdown）"))
+    })
 }
 
 fn read_stdin_json() -> CoreResult<Value> {
@@ -490,30 +621,29 @@ fn read_stdin_json() -> CoreResult<Value> {
         .map_err(|e| CoreError::Validation(format!("stdin 不是合法 JSON: {e}")))
 }
 
+fn gen_op_id() -> String {
+    dashboard_domain::new_id("op")
+}
+
+fn day_view_text(v: &checkin_service::TaskDayView) -> String {
+    let target = v.target.map(|t| t.to_string()).unwrap_or("-".into());
+    format!(
+        "{} [{}] 今日 {}/{} {}",
+        v.task.title, v.state, v.count, target, v.task.unit
+    )
+}
+
 fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
     match cmd {
         TaskCmd::List {
-            today,
-            overdue,
             status,
             project,
             limit,
         } => {
             let conn = util::open_conn()?;
             let mut q = ds::task_repo::TaskQuery::with_limit(limit);
-            if today || overdue {
-                let (start, end) = context_service::local_today_range(Utc::now());
-                q.exclude_done = true;
-                q.order_by_due = true;
-                if today {
-                    q.due_from = Some(start);
-                    q.due_to = Some(end);
-                } else {
-                    q.due_to = Some(start);
-                }
-            }
             if let Some(st) = status {
-                q.status = Some(parse_status(&st)?);
+                q.status = Some(parse_task_status(&st)?);
             }
             q.project_id = project;
             let tasks = task_service::list_tasks(&conn, &q)?;
@@ -529,47 +659,69 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
         TaskCmd::Show { id } => {
             let conn = util::open_conn()?;
             let tid = util::resolve_task_id(&conn, &id)?;
-            let t = task_service::get_task(&conn, &tid)?;
+            let v = checkin_service::task_day_view(&conn, &tid)?;
             Ok(Out {
-                text: format!("[{}] {} （{}）", t.status.as_str(), t.title, t.id),
-                data: json!(t),
+                text: day_view_text(&v),
+                data: serde_json::to_value(&v).unwrap_or(Value::Null),
             })
         }
         TaskCmd::Create {
             title,
-            due,
+            target,
+            unit,
+            icon,
+            color,
+            card_style,
             project,
+            library,
             stdin,
         } => {
             let conn = util::open_conn()?;
-            let (title, due_s, project) = if stdin {
+            let mut input = task_service::CreateTaskInput::default();
+            if stdin {
                 let v = read_stdin_json()?;
-                (
-                    v["title"].as_str().map(|s| s.to_string()),
-                    v["due"]
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .or(v["due_at"].as_str().map(|s| s.to_string())),
-                    v["project"]
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .or(v["project_id"].as_str().map(|s| s.to_string())),
-                )
+                input.title = v["title"].as_str().unwrap_or("").to_string();
+                if let Some(t) = v["target"].as_i64().or(v["daily_target"].as_i64()) {
+                    input.daily_target = t;
+                }
+                if let Some(s) = v["unit"].as_str() {
+                    input.unit = s.to_string();
+                }
+                if let Some(s) = v["icon"].as_str() {
+                    input.icon = s.to_string();
+                }
+                if let Some(s) = v["color"].as_str().or(v["color_hex"].as_str()) {
+                    input.color_hex = s.to_string();
+                }
+                if let Some(s) = v["card_style"].as_str() {
+                    input.card_style = parse_card_style(s)?;
+                }
+                input.project_id = v["project"]
+                    .as_str()
+                    .or(v["project_id"].as_str())
+                    .map(|s| s.to_string());
+                input.library_id = v["library"]
+                    .as_str()
+                    .or(v["library_id"].as_str())
+                    .map(|s| s.to_string());
             } else {
-                (title, due, project)
-            };
-            let title = title.ok_or_else(|| {
-                CoreError::Validation("缺少 --title（或使用 --stdin 传入 JSON）".into())
-            })?;
-            let due_at = match due_s.as_deref() {
-                Some(s) => Some(util::parse_due(s).map_err(CoreError::Validation)?),
-                None => None,
-            };
-            let input = task_service::CreateTaskInput {
-                title,
-                due_at,
-                project_id: project,
-            };
+                input.title = title.ok_or_else(|| {
+                    CoreError::Validation("缺少 --title（或使用 --stdin 传入 JSON）".into())
+                })?;
+                if let Some(t) = target {
+                    input.daily_target = t;
+                }
+                input.unit = unit.unwrap_or_default();
+                input.icon = icon.unwrap_or_default();
+                if let Some(c) = color {
+                    input.color_hex = c;
+                }
+                if let Some(s) = card_style {
+                    input.card_style = parse_card_style(&s)?;
+                }
+                input.project_id = project;
+                input.library_id = library;
+            }
             let t = task_service::create_task(&conn, &input, actor())?;
             Ok(Out {
                 text: format!("已创建任务 {}: {}", t.id, t.title),
@@ -579,9 +731,11 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
         TaskCmd::Update {
             id,
             title,
-            due,
-            clear_due,
-            status,
+            target,
+            unit,
+            icon,
+            color,
+            card_style,
             project,
             clear_project,
         } => {
@@ -589,16 +743,12 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
             let tid = util::resolve_task_id(&conn, &id)?;
             let input = task_service::UpdateTaskInput {
                 title,
-                due_at: if clear_due {
-                    Some(None)
-                } else {
-                    match due.as_deref() {
-                        Some(s) => Some(Some(util::parse_due(s).map_err(CoreError::Validation)?)),
-                        None => None,
-                    }
-                },
-                status: match status.as_deref() {
-                    Some(s) => Some(parse_status(s)?),
+                icon,
+                color_hex: color,
+                unit,
+                daily_target: target,
+                card_style: match card_style.as_deref() {
+                    Some(s) => Some(parse_card_style(s)?),
                     None => None,
                 },
                 project_id: if clear_project {
@@ -613,21 +763,127 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
                 data: json!(t),
             })
         }
+        TaskCmd::Checkin { id, operation_id } => {
+            let conn = util::open_conn()?;
+            let tid = util::resolve_task_id(&conn, &id)?;
+            let op = operation_id.unwrap_or_else(gen_op_id);
+            let v = checkin_service::record(&conn, &tid, &op, actor())?;
+            Ok(Out {
+                text: day_view_text(&v),
+                data: serde_json::to_value(&v).unwrap_or(Value::Null),
+            })
+        }
+        TaskCmd::Decrement { id, operation_id } => {
+            let conn = util::open_conn()?;
+            let tid = util::resolve_task_id(&conn, &id)?;
+            let op = operation_id.unwrap_or_else(gen_op_id);
+            let v = checkin_service::decrement(&conn, &tid, &op, actor())?;
+            Ok(Out {
+                text: day_view_text(&v),
+                data: serde_json::to_value(&v).unwrap_or(Value::Null),
+            })
+        }
+        TaskCmd::Undo { id, operation_id } => {
+            let conn = util::open_conn()?;
+            let tid = util::resolve_task_id(&conn, &id)?;
+            let op = operation_id.unwrap_or_else(gen_op_id);
+            let v = checkin_service::undo(&conn, &tid, &op, actor())?;
+            Ok(Out {
+                text: day_view_text(&v),
+                data: serde_json::to_value(&v).unwrap_or(Value::Null),
+            })
+        }
+        TaskCmd::Overview { id, period, anchor } => {
+            let conn = util::open_conn()?;
+            let tid = util::resolve_task_id(&conn, &id)?;
+            let ov =
+                overview_service::task_period_overview(&conn, &tid, &period, anchor.as_deref())?;
+            let s = &ov.summary;
+            Ok(Out {
+                text: format!(
+                    "{}（{} ~ {}）：完成 {}/{} 天 · 完成率 {:.0}% · 当前连续 {} 天 · 最长连续 {} 天",
+                    ov.kind,
+                    ov.start_day,
+                    ov.end_day,
+                    s.complete_day_count,
+                    s.applicable_day_count,
+                    s.complete_day_rate * 100.0,
+                    s.current_streak,
+                    s.longest_streak,
+                ),
+                data: serde_json::to_value(&ov).unwrap_or(Value::Null),
+            })
+        }
+        TaskCmd::Archive { id } => {
+            let conn = util::open_conn()?;
+            let tid = util::resolve_task_id(&conn, &id)?;
+            let t = task_service::archive_task(&conn, &tid, actor())?;
+            Ok(Out {
+                text: format!("已归档: {}", t.title),
+                data: json!(t),
+            })
+        }
+        TaskCmd::Restore { id } => {
+            let conn = util::open_conn()?;
+            let tid = util::resolve_task_id(&conn, &id)?;
+            let t = task_service::restore_task(&conn, &tid, actor())?;
+            Ok(Out {
+                text: format!("已恢复: {}", t.title),
+                data: json!(t),
+            })
+        }
         TaskCmd::Complete { id } => {
             let conn = util::open_conn()?;
             let tid = util::resolve_task_id(&conn, &id)?;
-            let t = task_service::complete_task(&conn, &tid, actor())?;
+            let v = checkin_service::complete_today(&conn, &tid, actor())?;
             Ok(Out {
-                text: format!("已完成: {}", t.title),
-                data: json!(t),
+                text: format!(
+                    "已补满今日目标: {}（complete 已废弃，请改用 checkin）",
+                    v.task.title
+                ),
+                data: json!({
+                    "deprecated": true,
+                    "replacement": "task checkin",
+                    "task_day": v,
+                }),
             })
         }
         TaskCmd::Reopen { id } => {
             let conn = util::open_conn()?;
             let tid = util::resolve_task_id(&conn, &id)?;
-            let t = task_service::reopen_task(&conn, &tid, actor())?;
+            let v = checkin_service::reopen_today(&conn, &tid, actor())?;
             Ok(Out {
-                text: format!("已重新打开: {}", t.title),
+                text: format!(
+                    "已清零今日打卡: {}（reopen 已废弃，请改用 decrement/undo）",
+                    v.task.title
+                ),
+                data: json!({
+                    "deprecated": true,
+                    "replacement": "task decrement / task undo",
+                    "task_day": v,
+                }),
+            })
+        }
+        TaskCmd::Move { id, library, clear } => {
+            let conn = util::open_conn()?;
+            let tid = util::resolve_task_id(&conn, &id)?;
+            let target = if clear {
+                None
+            } else {
+                Some(util::resolve_library_id(
+                    &conn,
+                    library.as_deref().ok_or_else(|| {
+                        CoreError::Validation("需要 --library <id> 或 --clear".into())
+                    })?,
+                )?)
+            };
+            let t = library_service::move_task(&conn, &tid, target.as_deref(), actor())?;
+            Ok(Out {
+                text: format!(
+                    "已移动任务 {} → {}",
+                    t.title,
+                    target.as_deref().unwrap_or("（独立）")
+                ),
                 data: json!(t),
             })
         }
@@ -645,17 +901,180 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
                 data: serde_json::to_value(&report).unwrap_or(Value::Null),
             })
         }
-        TaskCmd::ClearCompleted { dry_run } => {
+        TaskCmd::ClearArchived { dry_run } => {
             let conn = util::open_conn()?;
-            let report = task_service::clear_completed_tasks(&conn, dry_run, actor())?;
+            let report = task_service::clear_archived_tasks(&conn, dry_run, actor())?;
             let n = report.affected_ids.len();
             Ok(Out {
                 text: if report.dry_run {
-                    format!("[dry-run] 预计删除 {n} 个已完成任务")
+                    format!("[dry-run] 预计删除 {n} 个已归档任务")
                 } else {
-                    format!("已清理 {n} 个已完成任务")
+                    format!("已清理 {n} 个已归档任务")
                 },
                 data: serde_json::to_value(&report).unwrap_or(Value::Null),
+            })
+        }
+    }
+}
+
+fn library_cmd(cmd: LibraryCmd) -> CoreResult<Out> {
+    match cmd {
+        LibraryCmd::Create {
+            title,
+            kind,
+            anchor,
+            note,
+            icon,
+            color,
+            stdin,
+        } => {
+            let conn = util::open_conn()?;
+            let mut input = library_service::CreateLibraryInput {
+                title: String::new(),
+                note,
+                icon,
+                color_hex: color.unwrap_or_else(|| "#4A90E2".into()),
+                kind: parse_library_kind(&kind)?,
+                anchor_day: anchor,
+            };
+            if stdin {
+                let v = read_stdin_json()?;
+                input.title = v["title"].as_str().unwrap_or("").to_string();
+                input.kind = parse_library_kind(v["kind"].as_str().unwrap_or(""))?;
+                input.anchor_day = v["anchor"]
+                    .as_str()
+                    .or(v["anchor_day"].as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if let Some(s) = v["note"].as_str() {
+                    input.note = s.to_string();
+                }
+                if let Some(s) = v["icon"].as_str() {
+                    input.icon = s.to_string();
+                }
+                if let Some(s) = v["color"].as_str().or(v["color_hex"].as_str()) {
+                    input.color_hex = s.to_string();
+                }
+            } else {
+                input.title = title.ok_or_else(|| {
+                    CoreError::Validation("缺少 --title（或使用 --stdin 传入 JSON）".into())
+                })?;
+            }
+            let lib = library_service::create_library(&conn, &input, actor())?;
+            Ok(Out {
+                text: format!("已创建主库 {}: {}", lib.id, lib.title),
+                data: json!(lib),
+            })
+        }
+        LibraryCmd::List { include_archived } => {
+            let conn = util::open_conn()?;
+            let items = library_service::list_library_items(&conn, include_archived)?;
+            let mut text = String::new();
+            if items.is_empty() {
+                text.push_str("（无主库）");
+            } else {
+                for it in &items {
+                    let days = match it.day_info.display_kind.as_str() {
+                        "day_n" => format!("第 {} 天", it.day_info.day_count),
+                        "remaining" => format!("还剩 {} 天", it.day_info.day_count),
+                        "today" => "就是今天".to_string(),
+                        _ => format!("已逾期 {} 天", it.day_info.day_count),
+                    };
+                    text.push_str(&format!(
+                        "{} [{}|{}] {} · {} · {} 个任务\n",
+                        it.library.id,
+                        it.library.kind.as_str(),
+                        it.library.status.as_str(),
+                        it.library.title,
+                        days,
+                        it.task_count,
+                    ));
+                }
+            }
+            Ok(Out {
+                text: text.trim_end().to_string(),
+                data: json!(items),
+            })
+        }
+        LibraryCmd::Show { id } => {
+            let conn = util::open_conn()?;
+            let lid = util::resolve_library_id(&conn, &id)?;
+            let lib = library_service::get_library(&conn, &lid)?;
+            let today = context_service::local_today();
+            let info = library_service::day_info(&lib, &today)?;
+            let tasks = library_service::library_tasks(&conn, &lid)?;
+            let heatmap = overview_service::library_year_heatmap(&conn, &lid, None)?;
+            let text = format!(
+                "{} [{}]\n锚点 {} · 任务 {} 个 · 热力图 {} 天",
+                lib.title,
+                info.display_kind,
+                lib.anchor_day,
+                tasks.len(),
+                heatmap.days.len(),
+            );
+            Ok(Out {
+                text,
+                data: json!({
+                    "library": lib,
+                    "day_info": info,
+                    "tasks": tasks,
+                    "year_heatmap": heatmap,
+                }),
+            })
+        }
+        LibraryCmd::Update {
+            id,
+            title,
+            note,
+            icon,
+            color,
+            anchor,
+        } => {
+            let conn = util::open_conn()?;
+            let lid = util::resolve_library_id(&conn, &id)?;
+            let input = library_service::UpdateLibraryInput {
+                title,
+                note,
+                icon,
+                color_hex: color,
+                anchor_day: anchor,
+            };
+            let lib = library_service::update_library(&conn, &lid, &input, actor())?;
+            Ok(Out {
+                text: format!("已更新主库 {}: {}", lib.id, lib.title),
+                data: json!(lib),
+            })
+        }
+        LibraryCmd::Archive { id, mode, to } => {
+            let conn = util::open_conn()?;
+            let lid = util::resolve_library_id(&conn, &id)?;
+            let m = match mode.as_str() {
+                "keep" => library_service::ArchiveTaskMode::Keep,
+                "detach" => library_service::ArchiveTaskMode::Detach,
+                "move-to" | "move_to" => library_service::ArchiveTaskMode::MoveTo,
+                _ => {
+                    return Err(CoreError::Validation(
+                        "无效 mode（keep|detach|move-to）".into(),
+                    ))
+                }
+            };
+            let to_id = match to.as_deref() {
+                Some(t) => Some(util::resolve_library_id(&conn, t)?),
+                None => None,
+            };
+            let lib = library_service::archive_library(&conn, &lid, m, to_id.as_deref(), actor())?;
+            Ok(Out {
+                text: format!("已归档主库 {}: {}", lib.id, lib.title),
+                data: json!(lib),
+            })
+        }
+        LibraryCmd::Restore { id } => {
+            let conn = util::open_conn()?;
+            let lid = util::resolve_library_id(&conn, &id)?;
+            let lib = library_service::restore_library(&conn, &lid, actor())?;
+            Ok(Out {
+                text: format!("已恢复主库 {}: {}", lib.id, lib.title),
+                data: json!(lib),
             })
         }
     }
@@ -870,7 +1289,7 @@ fn inbox_cmd(cmd: InboxCmd) -> CoreResult<Out> {
         }
         InboxCmd::Task { id } => {
             let conn = util::open_conn()?;
-            let r = inbox_service::process_to_task(&conn, &id, None, actor())?;
+            let r = inbox_service::process_to_task(&conn, &id, actor())?;
             Ok(Out {
                 text: format!("已转为任务 {}", r.created_id),
                 data: serde_json::to_value(&r).unwrap_or(Value::Null),
@@ -1047,24 +1466,20 @@ fn context_cmd(cmd: ContextCmd) -> CoreResult<Out> {
             let _ = writeln!(text, "== 今天 {} ==", ctx.date);
             let _ = writeln!(
                 text,
-                "今日任务 {} · 已完成 {} · 逾期 {} · 收件箱 {}",
-                ctx.stats.today_total,
+                "今日任务 {} · 已达标 {} · 完成率 {:.0}% · 近7天错过 {} · 收件箱 {}",
+                ctx.stats.task_total,
                 ctx.stats.completed_today,
-                ctx.stats.overdue_total,
+                ctx.stats.completion_rate * 100.0,
+                ctx.stats.missed_last_7d,
                 ctx.open_inbox_count
             );
-            let _ = writeln!(text, "-- 今日待办");
-            for t in &ctx.today_tasks {
-                let _ = writeln!(text, "- {} [{}]", t.title, t.status.as_str());
-            }
-            let _ = writeln!(text, "-- 已逾期");
-            for t in &ctx.overdue_tasks {
+            let _ = writeln!(text, "-- 今日任务");
+            for v in &ctx.today_tasks {
+                let target = v.target.map(|t| t.to_string()).unwrap_or("-".into());
                 let _ = writeln!(
                     text,
-                    "- {} [{}] due={}",
-                    t.title,
-                    t.status.as_str(),
-                    output::fmt_due(t.due_at)
+                    "- {} [{}/{} {}] {}",
+                    v.task.title, v.count, target, v.task.unit, v.state
                 );
             }
             let _ = writeln!(text, "-- 活跃项目");
@@ -1099,20 +1514,20 @@ fn context_cmd(cmd: ContextCmd) -> CoreResult<Out> {
 
 fn status_cmd() -> CoreResult<Out> {
     let conn = util::open_conn()?;
-    let open_tasks = ds::task_repo::count_open(&conn)?;
+    let open_tasks = ds::task_repo::count_active(&conn)?;
     let inbox_open = ds::inbox_repo::count_open(&conn)?;
     let projects = ds::project_repo::list(&conn, false)?.len();
     let info = json!({
         "version": env!("CARGO_PKG_VERSION"),
         "db_path": ds::default_db_path().display().to_string(),
         "widget_snapshot_path": dashboard_core::snapshot::snapshot_path().display().to_string(),
-        "open_tasks": open_tasks,
+        "active_tasks": open_tasks,
         "inbox_open": inbox_open,
         "active_projects": projects,
     });
     Ok(Out {
         text: format!(
-            "Dashboard v{}\nDB: {}\n未完成任务 {} · 收件箱 {} · 活跃项目 {}",
+            "Dashboard v{}\nDB: {}\n启用任务 {} · 收件箱 {} · 活跃项目 {}",
             info["version"].as_str().unwrap_or("?"),
             info["db_path"].as_str().unwrap_or("?"),
             open_tasks,

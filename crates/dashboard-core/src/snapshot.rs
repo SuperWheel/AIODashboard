@@ -2,7 +2,7 @@
 //!
 //! Widget 只消费本快照，不接触数据库 Schema。
 
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -23,15 +23,18 @@ pub struct WidgetSnapshotV1 {
 pub struct TodayPart {
     /// 本地日期 "2026-08-22"
     pub date: String,
-    /// 今日待办总数（今天到期未完成）
+    /// 今日有效任务数
     pub task_total: i64,
-    /// 今日已完成数
+    /// 今日已达标任务数
     pub task_completed_today: i64,
-    pub overdue_total: i64,
+    /// 今日完成率（Σmin(count,target)/Σtarget）
+    pub completion_rate: f64,
+    /// 近 7 天已错过天数
+    pub missed_last_7d: i64,
     pub inbox_open: i64,
     /// 未来接入 Calendar；当前恒为 null
     pub next_event: Option<String>,
-    /// 当前重点：第一个 doing 任务标题，否则第一个活跃项目名
+    /// 当前重点：第一个进行中任务标题，否则第一个活跃项目名
     pub current_focus: Option<String>,
 }
 
@@ -58,47 +61,25 @@ pub fn snapshot_path() -> PathBuf {
         .join("widget-snapshot.json")
 }
 
-/// 构建今日快照。
+/// 构建今日快照（打卡口径）。
 pub fn build_today(conn: &Connection) -> rusqlite::Result<WidgetSnapshotV1> {
-    use crate::context_service::local_today_range;
     let now = Utc::now();
-    let (start, end) = local_today_range(now);
-
-    let total = ds::task_repo::list(
-        conn,
-        &ds::task_repo::TaskQuery {
-            due_from: Some(start),
-            due_to: Some(end),
-            exclude_done: true,
-            limit: 10_000,
-            ..Default::default()
-        },
-    )?
-    .len() as i64;
-    let overdue = ds::task_repo::list(
-        conn,
-        &ds::task_repo::TaskQuery {
-            due_to: Some(start),
-            exclude_done: true,
-            limit: 10_000,
-            ..Default::default()
-        },
-    )?
-    .len() as i64;
-    let completed = ds::task_repo::count_completed_between(conn, start, end)?;
+    let views = crate::context_service::today_task_views(conn)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    let completed = views.iter().filter(|v| v.state == "completed").count() as i64;
+    let rate = crate::day_state::today_rate(
+        &views
+            .iter()
+            .filter_map(|v| v.target.map(|t| (v.count, t)))
+            .collect::<Vec<_>>(),
+    );
+    let missed = crate::context_service::missed_days_last_7d(conn)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     let inbox_open = ds::inbox_repo::count_open(conn)?;
 
-    // 当前重点：doing > 活跃项目 > 无
-    let doing = ds::task_repo::list(
-        conn,
-        &ds::task_repo::TaskQuery {
-            status: Some(dashboard_domain::TaskStatus::Doing),
-            limit: 1,
-            ..Default::default()
-        },
-    )?;
-    let focus = match doing.first() {
-        Some(t) => Some(t.title.clone()),
+    // 当前重点：进行中任务 > 活跃项目 > 无
+    let focus = match views.iter().find(|v| v.state == "in_progress") {
+        Some(v) => Some(v.task.title.clone()),
         None => ds::project_repo::list(conn, false)?
             .first()
             .map(|p| p.name.clone()),
@@ -108,14 +89,11 @@ pub fn build_today(conn: &Connection) -> rusqlite::Result<WidgetSnapshotV1> {
         schema: SCHEMA,
         generated_at: now,
         today: TodayPart {
-            date: Local
-                .from_utc_datetime(&now.naive_utc())
-                .date_naive()
-                .format("%Y-%m-%d")
-                .to_string(),
-            task_total: total,
+            date: crate::context_service::local_today(),
+            task_total: views.len() as i64,
             task_completed_today: completed,
-            overdue_total: overdue,
+            completion_rate: rate,
+            missed_last_7d: missed,
             inbox_open,
             next_event: None,
             current_focus: focus,

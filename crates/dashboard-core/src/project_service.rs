@@ -63,7 +63,7 @@ pub fn list_projects_with_stats(conn: &Connection) -> CoreResult<Vec<ProjectWith
             conn,
             &task_repo::TaskQuery {
                 project_id: Some(p.id.clone()),
-                exclude_done: true,
+                active_only: true,
                 limit: 1_000,
                 ..Default::default()
             },

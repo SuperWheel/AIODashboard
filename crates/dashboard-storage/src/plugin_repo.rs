@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(kv_delete(&conn, "com.a", "counter").unwrap(), 0);
     }
 
-    /// T2：V1 库升级到 V2 不破坏旧数据，新表可用。
+    /// T2：V1 库升级到最新版本不破坏旧数据，新表可用。
     #[test]
     fn migration_v1_to_v2_preserves_data() {
         let path = temp_db_path("mig");
@@ -163,7 +163,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 2);
+        assert_eq!(v, 3);
 
         // 旧数据完整
         let old = crate::task_repo::get(&conn, "tsk_old").unwrap();

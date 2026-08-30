@@ -3,10 +3,15 @@
 //! 面向 AI 的稳定输出协议：
 //! - 统一 JSON 信封 `{ success, data, error, meta.schema_version }`
 //! - 标准 Exit Code（0 成功 / 1 一般错误 / 2 参数错误 / 3 数据不存在 / 5 冲突）
+//!
+//! ## schema_version 历史
+//! - "1"：todo 式任务（due_at / todo·doing·done）
+//! - "2"：打卡式任务（task-checkin-cards，变更包 003）——Task 字段重构、
+//!   新增 checkin/library 命令组、complete/reopen 语义重映射（deprecated）
 
 use serde::Serialize;
 
-pub const SCHEMA_VERSION: &str = "1";
+pub const SCHEMA_VERSION: &str = "2";
 
 /// 标准 Exit Code。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

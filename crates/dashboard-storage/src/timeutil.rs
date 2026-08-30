@@ -24,6 +24,7 @@ pub fn read_time(row: &Row, idx: usize) -> rusqlite::Result<DateTime<Utc>> {
     parse_or_err(idx, s)
 }
 
+#[allow(dead_code)]
 pub fn read_time_opt(row: &Row, idx: usize) -> rusqlite::Result<Option<DateTime<Utc>>> {
     let s: Option<String> = row.get(idx)?;
     match s {
