@@ -1,0 +1,24 @@
+[package]
+name = "dashboard-desktop"
+version.workspace = true
+edition.workspace = true
+description = "AIODashboard Desktop (Tauri 2)"
+
+[lib]
+name = "dashboard_desktop_lib"
+# 纯桌面端只需 rlib；staticlib/cdylib 是移动端(iOS/Android)才需要的
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+
+dashboard-domain = { workspace = true }
+dashboard-storage = { workspace = true }
+dashboard-core = { workspace = true }

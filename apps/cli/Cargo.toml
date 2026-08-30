@@ -1,0 +1,23 @@
+[package]
+name = "dashboard-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "dashboard"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+
+dashboard-domain = { workspace = true }
+dashboard-storage = { workspace = true }
+dashboard-core = { workspace = true }
+dashboard-protocol = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+serde_json = { workspace = true }
