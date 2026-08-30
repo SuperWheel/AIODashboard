@@ -68,14 +68,15 @@ describe("API 桥权限执行", () => {
     const deps = makeDeps();
     const apiObj = createPluginApi("com.test.echo", manifest({}), deps);
 
-    await apiObj.storage.set("counter", "1");
+    await apiObj.storage.kv.set("counter", "1");
     expect(coreApi.pluginKvSet).toHaveBeenCalledWith("com.test.echo", "counter", "1");
 
-    await apiObj.storage.get("counter");
+    await apiObj.storage.kv.get("counter");
     expect(coreApi.pluginKvGet).toHaveBeenCalledWith("com.test.echo", "counter");
 
-    // 桥不暴露任何能改 pluginId 的口子
-    expect(Object.keys(apiObj.storage).sort()).toEqual(["delete", "get", "list", "set"]);
+    // 公开协议 = storage.kv.*（对齐 PLUGIN_API.md）；桥不暴露任何能改 pluginId 的口子
+    expect(Object.keys(apiObj.storage)).toEqual(["kv"]);
+    expect(Object.keys(apiObj.storage.kv).sort()).toEqual(["delete", "get", "list", "set"]);
   });
 
   it("领域写入带 actor=plugin:<id>（审计归因）", async () => {

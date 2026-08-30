@@ -12,6 +12,7 @@ import InboxView from "./components/InboxView";
 import SearchPalette from "./components/SearchPalette";
 import PluginsView from "./components/PluginsView";
 import PluginApprovalModal from "./components/PluginApprovalModal";
+import PluginErrorBoundary from "./components/PluginErrorBoundary";
 import { EventBus } from "./plugins/events";
 import { CronRegistry } from "./plugins/crons";
 import { ModuleRegistry, type PluginCardProps } from "./plugins/registry";
@@ -247,7 +248,9 @@ export default function App() {
         };
         return (
           <div key={c.id} className={CARD_SPAN[c.size ?? "md"]}>
-            <c.component {...props} />
+            <PluginErrorBoundary name={c.id}>
+              <c.component {...props} />
+            </PluginErrorBoundary>
           </div>
         );
       })}
@@ -269,13 +272,26 @@ export default function App() {
       />
       <main className="flex-1 overflow-y-auto px-8 py-6">
         <div className={`mx-auto ${wide ? "max-w-6xl" : "max-w-3xl"}`}>
-          <activeView.component
-            today={today}
-            onChanged={bump}
-            onNav={setView}
-            refreshKey={refreshKey}
-            cards={cardsNode ?? undefined}
-          />
+          {activeView.owner === "core" ? (
+            <activeView.component
+              today={today}
+              onChanged={bump}
+              onNav={setView}
+              refreshKey={refreshKey}
+              cards={cardsNode ?? undefined}
+            />
+          ) : (
+            /* 插件视图包错误边界：插件抛错只降级这一块，不白屏整个面板 */
+            <PluginErrorBoundary name={activeView.key} key={activeView.key}>
+              <activeView.component
+                today={today}
+                onChanged={bump}
+                onNav={setView}
+                refreshKey={refreshKey}
+                cards={cardsNode ?? undefined}
+              />
+            </PluginErrorBoundary>
+          )}
         </div>
       </main>
       {/* 新插件权限确认（安装时刻） */}

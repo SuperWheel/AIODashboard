@@ -33,10 +33,12 @@ export interface PluginApi {
     createNote: (title: string, body: string) => ReturnType<typeof coreApi.createNoteAs>;
   };
   storage: {
-    get: (key: string) => Promise<string | null>;
-    set: (key: string, value: string) => Promise<void>;
-    delete: (key: string) => Promise<boolean>;
-    list: (keyPrefix?: string) => Promise<{ key: string; value: string }[]>;
+    kv: {
+      get: (key: string) => Promise<string | null>;
+      set: (key: string, value: string) => Promise<void>;
+      delete: (key: string) => Promise<boolean>;
+      list: (keyPrefix?: string) => Promise<{ key: string; value: string }[]>;
+    };
   };
   fetch: (url: string) => Promise<{ status: number; text: string; json: unknown }>;
   events: {
@@ -99,14 +101,16 @@ export function createPluginApi(
     },
 
     storage: {
-      get: (key: string) => coreApi.pluginKvGet(pluginId, key),
-      set: async (key: string, value: string) => {
-        await coreApi.pluginKvSet(pluginId, key, value);
-      },
-      delete: (key: string) => coreApi.pluginKvDelete(pluginId, key),
-      list: async (keyPrefix?: string) => {
-        const entries = await coreApi.pluginKvList(pluginId, keyPrefix);
-        return entries.map((e) => ({ key: e.key, value: e.value }));
+      kv: {
+        get: (key: string) => coreApi.pluginKvGet(pluginId, key),
+        set: async (key: string, value: string) => {
+          await coreApi.pluginKvSet(pluginId, key, value);
+        },
+        delete: (key: string) => coreApi.pluginKvDelete(pluginId, key),
+        list: async (keyPrefix?: string) => {
+          const entries = await coreApi.pluginKvList(pluginId, keyPrefix);
+          return entries.map((e) => ({ key: e.key, value: e.value }));
+        },
       },
     },
 
