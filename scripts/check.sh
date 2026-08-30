@@ -9,19 +9,29 @@ cd "$(dirname "$0")/.."
 
 step() { printf '\n==> %s\n' "$1"; }
 
-step "[1/5] cargo fmt --check"
+step "[1/6] cargo fmt --check"
 cargo fmt --all --check
 
-step "[2/5] cargo clippy (-D warnings)"
+step "[2/6] cargo clippy (-D warnings)"
 cargo clippy --workspace --all-targets -- -D warnings
 
-step "[3/5] cargo test (workspace)"
+step "[3/6] cargo test (workspace)"
 cargo test --workspace
 
-step "[4/5] cargo build (workspace)"
+step "[4/6] cargo build (workspace)"
 cargo build --workspace
 
-step "[5/5] frontend build (tsc + vite production build)"
+step "[5/6] frontend test (vitest)"
+(
+  cd apps/desktop
+  if [ ! -d node_modules ]; then
+    echo "node_modules 不存在，先执行 npm install"
+    npm install
+  fi
+  npm run test
+)
+
+step "[6/6] frontend build (tsc + vite production build)"
 (
   cd apps/desktop
   if [ ! -d node_modules ]; then

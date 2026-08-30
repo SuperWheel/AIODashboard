@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { api } from "../api";
 import type { TodayContext } from "../types";
 import TaskRow from "./TaskRow";
@@ -8,10 +8,13 @@ export default function TodayView({
   data,
   onChanged,
   onNav,
+  extraCards,
 }: {
   data: TodayContext | null;
   onChanged: () => void;
   onNav: (v: string) => void;
+  /** 插件卡片槽位（ModuleRegistry 注入） */
+  extraCards?: ReactNode;
 }) {
   const [title, setTitle] = useState("");
   const [dueToday, setDueToday] = useState(true);
@@ -53,6 +56,9 @@ export default function TodayView({
         <StatCard label="已逾期" value={data?.stats.overdue_total ?? "-"} tone="red" />
         <StatCard label="收件箱" value={data?.open_inbox_count ?? "-"} tone="violet" />
       </div>
+
+      {/* 插件卡片槽位 */}
+      {extraCards}
 
       {/* 快速添加 */}
       <SectionTitle>快速添加</SectionTitle>

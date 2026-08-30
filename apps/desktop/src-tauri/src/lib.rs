@@ -18,6 +18,14 @@ fn actor() -> Actor {
     Actor::User
 }
 
+/// 可选 actor 参数：普通前端调用不传（= User）；插件桥传 `plugin:<id>`（审计归因）。
+fn actor_from(actor: Option<String>) -> Actor {
+    match actor {
+        Some(a) => Actor::parse(&a).unwrap_or(Actor::User),
+        None => Actor::User,
+    }
+}
+
 // ---------------- Today / Tasks ----------------
 
 #[tauri::command]
@@ -58,7 +66,12 @@ fn list_tasks(scope: Option<String>) -> R<Vec<Task>> {
 }
 
 #[tauri::command]
-fn create_task(title: String, due_at: Option<String>, project_id: Option<String>) -> R<Task> {
+fn create_task(
+    title: String,
+    due_at: Option<String>,
+    project_id: Option<String>,
+    actor: Option<String>,
+) -> R<Task> {
     let due = match due_at.as_deref() {
         None | Some("") | Some("null") => None,
         Some(s) => Some(core::parse_due_input(s).map_err(|e| e.to_string())?),
@@ -69,21 +82,21 @@ fn create_task(title: String, due_at: Option<String>, project_id: Option<String>
         due_at: due,
         project_id,
     };
-    core::task_service::create_task(&c, &input, actor()).map_err(|e| e.to_string())
+    core::task_service::create_task(&c, &input, actor_from(actor)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn set_task_status(id: String, status: String) -> R<Task> {
+fn set_task_status(id: String, status: String, actor: Option<String>) -> R<Task> {
     let st = dashboard_domain::TaskStatus::parse(&status)
         .ok_or_else(|| format!("无效状态: {status}"))?;
     let c = conn()?;
-    core::task_service::set_status(&c, &id, st, actor()).map_err(|e| e.to_string())
+    core::task_service::set_status(&c, &id, st, actor_from(actor)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn delete_task(id: String) -> R<()> {
+fn delete_task(id: String, actor: Option<String>) -> R<()> {
     let c = conn()?;
-    core::task_service::delete_task(&c, &id, false, actor())
+    core::task_service::delete_task(&c, &id, false, actor_from(actor))
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
@@ -124,9 +137,9 @@ fn list_notes(limit: Option<i64>) -> R<Vec<Note>> {
 }
 
 #[tauri::command]
-fn create_note(title: String, body: String) -> R<Note> {
+fn create_note(title: String, body: String, actor: Option<String>) -> R<Note> {
     let c = conn()?;
-    core::note_service::create_note(&c, &title, &body, actor()).map_err(|e| e.to_string())
+    core::note_service::create_note(&c, &title, &body, actor_from(actor)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -151,9 +164,10 @@ fn list_inbox(include_processed: Option<bool>) -> R<Vec<dashboard_domain::InboxI
 }
 
 #[tauri::command]
-fn add_inbox_item(content: String) -> R<dashboard_domain::InboxItem> {
+fn add_inbox_item(content: String, actor: Option<String>) -> R<dashboard_domain::InboxItem> {
     let c = conn()?;
-    core::inbox_service::add_item(&c, &content, "desktop", actor()).map_err(|e| e.to_string())
+    core::inbox_service::add_item(&c, &content, "desktop", actor_from(actor))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePolling } from "./hooks";
 import { api } from "./api";
 import type { TodayContext } from "./types";
@@ -9,20 +9,92 @@ import ProjectsView from "./components/ProjectsView";
 import NotesView from "./components/NotesView";
 import InboxView from "./components/InboxView";
 import SearchPalette from "./components/SearchPalette";
-
-export type ViewName = "today" | "tasks" | "projects" | "notes" | "inbox";
+import { EventBus } from "./plugins/events";
+import { ModuleRegistry, type PluginCardProps } from "./plugins/registry";
+import { loadAllPlugins, type LoadedPlugin } from "./plugins/loader";
 
 export default function App() {
-  const [view, setView] = useState<ViewName>("today");
+  const [view, setView] = useState<string>("today");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [today, setToday] = useState<TodayContext | null>(null);
   // refreshKey 变化时所有视图立即重新拉取（本地变更后同步 UI）
   const [refreshKey, setRefreshKey] = useState(0);
+  // 插件注册表变化时强制重渲染（注册/卸载贡献点）
+  const [pluginsVersion, setPluginsVersion] = useState(0);
   const bump = () => setRefreshKey((k) => k + 1);
+
+  const registryRef = useRef<ModuleRegistry | null>(null);
+  const eventsRef = useRef<EventBus | null>(null);
+  const pluginsRef = useRef<LoadedPlugin[]>([]);
+
+  if (!registryRef.current) {
+    const registry = new ModuleRegistry();
+    // 核心五视图与插件走同一注册路径（dogfooding）
+    registry.registerView({
+      owner: "core",
+      key: "today",
+      title: "今天",
+      icon: "◎",
+      component: (p) => <TodayView data={p.today} onChanged={p.onChanged} onNav={p.onNav} extraCards={p.cards} />,
+    });
+    registry.registerView({
+      owner: "core",
+      key: "tasks",
+      title: "任务",
+      icon: "☑",
+      component: (p) => <TasksView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+    });
+    registry.registerView({
+      owner: "core",
+      key: "projects",
+      title: "项目",
+      icon: "▤",
+      component: (p) => <ProjectsView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+    });
+    registry.registerView({
+      owner: "core",
+      key: "notes",
+      title: "笔记",
+      icon: "✎",
+      component: (p) => <NotesView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+    });
+    registry.registerView({
+      owner: "core",
+      key: "inbox",
+      title: "收件箱",
+      icon: "⬇",
+      component: (p) => <InboxView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+    });
+    registryRef.current = registry;
+  }
+  if (!eventsRef.current) {
+    eventsRef.current = new EventBus();
+  }
+  const registry = registryRef.current;
 
   const loadToday = () => api.getToday().then(setToday).catch(console.error);
 
   usePolling(loadToday, 4000, [refreshKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadAllPlugins({
+      registry,
+      events: eventsRef.current!,
+      onChanged: bump,
+    })
+      .then((loaded) => {
+        if (!cancelled) {
+          pluginsRef.current = loaded;
+          setPluginsVersion((v) => v + 1);
+        }
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -41,25 +113,49 @@ export default function App() {
     };
   }, []);
 
+  // 插件卡片槽位（Today 视图消费）
+  void pluginsVersion;
+  const apiById = new Map(pluginsRef.current.map((p) => [p.id, p.api]));
+  const cardsNode = registry.cards.length > 0 && (
+    <>
+      {registry.cards.map((c) => {
+        const props: PluginCardProps = {
+          api: apiById.get(c.owner) ?? null,
+          onChanged: bump,
+          today,
+        };
+        return <c.component key={c.id} {...props} />;
+      })}
+    </>
+  );
+
+  const view =
+    registry.views.find((v) => v.key === view) ?? registry.views[0];
+
   return (
     <div className="flex h-full w-full overflow-hidden bg-[#0f1115]">
-      <Sidebar current={view} onNav={setView} inboxOpen={today?.open_inbox_count ?? 0} />
+      <Sidebar
+        items={registry.views.map((v) => ({ key: v.key, label: v.title, icon: v.icon }))}
+        current={view.key}
+        onNav={setView}
+        inboxOpen={today?.open_inbox_count ?? 0}
+      />
       <main className="flex-1 overflow-y-auto px-8 py-6">
         <div className="mx-auto max-w-3xl">
-          {view === "today" && (
-            <TodayView data={today} onChanged={bump} onNav={(v) => setView(v as ViewName)} />
-          )}
-          {view === "tasks" && <TasksView refreshKey={refreshKey} onChanged={bump} />}
-          {view === "projects" && <ProjectsView refreshKey={refreshKey} onChanged={bump} />}
-          {view === "notes" && <NotesView refreshKey={refreshKey} onChanged={bump} />}
-          {view === "inbox" && <InboxView refreshKey={refreshKey} onChanged={bump} />}
+          <view.component
+            today={today}
+            onChanged={bump}
+            onNav={setView}
+            refreshKey={refreshKey}
+            cards={cardsNode ?? undefined}
+          />
         </div>
       </main>
       <SearchPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         onNavigate={(kind) => {
-          const map: Record<string, ViewName> = {
+          const map: Record<string, string> = {
             task: "tasks",
             project: "projects",
             note: "notes",

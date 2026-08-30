@@ -39,6 +39,12 @@ jobs:
       - name: Build
         run: cargo build --workspace
 
+      - name: Frontend test (vitest)
+        working-directory: apps/desktop
+        run: |
+          npm install
+          npm run test
+
       - name: Frontend build (tsc + vite)
         working-directory: apps/desktop
         run: |

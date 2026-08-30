@@ -1,20 +1,18 @@
-import type { ViewName } from "../App";
-
-const NAV: { key: ViewName; label: string; icon: string }[] = [
-  { key: "today", label: "今天", icon: "◎" },
-  { key: "tasks", label: "任务", icon: "☑" },
-  { key: "projects", label: "项目", icon: "▤" },
-  { key: "notes", label: "笔记", icon: "✎" },
-  { key: "inbox", label: "收件箱", icon: "⬇" },
-];
+interface NavItem {
+  key: string;
+  label: string;
+  icon: string;
+}
 
 export default function Sidebar({
+  items,
   current,
   onNav,
   inboxOpen,
 }: {
-  current: ViewName;
-  onNav: (v: ViewName) => void;
+  items: NavItem[];
+  current: string;
+  onNav: (v: string) => void;
   inboxOpen: number;
 }) {
   return (
@@ -25,7 +23,7 @@ export default function Sidebar({
       </div>
 
       <nav className="flex flex-col gap-1">
-        {NAV.map((item) => {
+        {items.map((item) => {
           const active = current === item.key;
           return (
             <button

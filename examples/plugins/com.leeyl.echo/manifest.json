@@ -1,0 +1,11 @@
+{
+  "id": "com.leeyl.echo",
+  "name": "Echo 示例",
+  "version": "0.1.0",
+  "entry": "main.js",
+  "description": "插件系统最小示例：KV 计数 + Today 卡片注册",
+  "permissions": {},
+  "contributions": {
+    "today_cards": [{ "id": "echo-card" }]
+  }
+}
