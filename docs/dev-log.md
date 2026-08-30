@@ -5,7 +5,27 @@
 
 ---
 
-## [2026-08-30] 修复：托盘/程序坞点击唤不出面板
+## [2026-08-30] 修复真机走查三问题：插件热加载 / 卡片可交互 / 输入法误触
+
+**需求简述**：用户真机反馈——①新建任务首页不显示；②启用番茄钟后侧栏和首页都不出现；③希望首页所有卡片可交互。
+
+**模式**：Plan（bug 修复 + 小特性）
+
+**根因与修复**：
+- **插件启停只写库不加载**（②的根因）：`PluginsView.toggle` 只调 `pluginSetEnabled`，
+  运行中的面板只在挂载时 loadAllPlugins——新启用的插件永远不进注册表。修复：toggle 后
+  dispatch `reload-plugins`（宿主既有 dispose-all + 重载链路），并补上 PLUGIN_API.md §6
+  承诺但漏做的「重载」按钮。
+- ①经 CLI 全链路验证数据层无恙（`task create --due 今天` → `context today` 即时可见），
+  GUI 有 4s 轮询 + bump 即时刷新；疑似用户操作发生在番茄钟白屏打死的旧窗口里。另发现一个
+  真实隐患：**中文输入法组合期按 Enter 会误提交半成品文本**，已在全部输入框加
+  `isComposing` 守卫。
+- ③Card 组件支持 `onClick`（hover 上浮 + 键盘 Enter/Space + role=button），StatCard 透出；
+  Today 页四张统计卡跳对应视图，最近笔记逐条、活跃项目徽标可点击。
+
+**验证结果**：✅ check.sh 全绿（vitest 22 + Rust 25 + 集成 11）。
+
+---
 
 **需求简述**：真机走查发现关窗进托盘后，点托盘图标无法唤出面板。
 
