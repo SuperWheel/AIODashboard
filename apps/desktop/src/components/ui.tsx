@@ -103,18 +103,33 @@ export function Card({
   children,
   className = "",
   hoverable = false,
+  onClick,
 }: {
   children: ReactNode;
   className?: string;
   hoverable?: boolean;
+  /** 传入即为可点卡片（hover 上浮 + 键盘 Enter/Space 触发） */
+  onClick?: () => void;
 }) {
+  const lift = hoverable || onClick !== undefined;
   return (
     <div
       className={`rounded-2xl border border-line bg-surface shadow-card ${
-        hoverable
-          ? "transition-all duration-150 hover:-translate-y-px hover:shadow-lg"
-          : ""
-      } ${className}`}
+        lift ? "transition-all duration-150 hover:-translate-y-px hover:shadow-lg" : ""
+      } ${onClick ? "cursor-pointer" : ""} ${className}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
     >
       {children}
     </div>
@@ -174,10 +189,13 @@ export function StatCard({
   label,
   value,
   tone = "slate",
+  onClick,
 }: {
   label: string;
   value: number | string;
   tone?: BadgeTone;
+  /** 传入即可点击跳转（hover 上浮） */
+  onClick?: () => void;
 }) {
   const dot: Record<BadgeTone, string> = {
     slate: "bg-ink3",
@@ -188,7 +206,7 @@ export function StatCard({
     violet: "bg-violet",
   };
   return (
-    <Card className="px-4 py-3">
+    <Card className="px-4 py-3" onClick={onClick}>
       <div className="flex items-center gap-1.5 text-xs text-ink2">
         <span className={`h-1.5 w-1.5 rounded-full ${dot[tone]}`} />
         {label}

@@ -53,14 +53,14 @@ export default function ProjectsView({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
+          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && add()}
           placeholder="项目名称…"
           className="w-48 bg-transparent text-sm outline-none placeholder:text-ink3"
         />
         <input
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
+          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && add()}
           placeholder="描述（可选）"
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink3"
         />

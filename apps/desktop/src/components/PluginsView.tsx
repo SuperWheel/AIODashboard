@@ -48,6 +48,8 @@ export default function PluginsView({
     setBusy(p.id);
     try {
       await api.pluginSetEnabled(p.id, p.enabled !== true);
+      // 启停立即生效：通知宿主 dispose 全部插件并按最新启停状态重新加载
+      window.dispatchEvent(new CustomEvent("reload-plugins"));
       onChanged();
     } catch (e) {
       alert(String(e));
@@ -62,6 +64,15 @@ export default function PluginsView({
         title="插件"
         count={plugins?.length}
         desc="插件目录：~/Library/Application Support/AIODashboard/plugins/"
+        actions={
+          <Button
+            variant="ghost"
+            title="停用全部插件后重新扫描加载（开发热更新入口）"
+            onClick={() => window.dispatchEvent(new CustomEvent("reload-plugins"))}
+          >
+            重载
+          </Button>
+        }
       />
 
       <SectionTitle>已发现插件</SectionTitle>

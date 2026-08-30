@@ -64,7 +64,7 @@ export default function QuickCapture({
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
+        onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submit()}
         placeholder="一个想法、一条待办、一个链接…"
         className="mt-3 w-full rounded-xl border border-line bg-surface2 px-3 py-2 text-sm outline-none placeholder:text-ink3 focus:border-accent/50"
       />

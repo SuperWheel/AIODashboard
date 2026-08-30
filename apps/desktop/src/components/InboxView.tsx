@@ -57,7 +57,7 @@ export default function InboxView({
         <input
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
+          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && add()}
           placeholder="一个想法 / 一条待办 / 一个链接…"
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink3"
         />

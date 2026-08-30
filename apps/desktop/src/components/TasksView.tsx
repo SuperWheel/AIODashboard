@@ -55,7 +55,7 @@ export default function TasksView({
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
+          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && add()}
           placeholder="新任务标题，回车创建…"
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink3"
         />

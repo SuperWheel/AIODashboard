@@ -55,10 +55,10 @@ export default function TodayView({
 
       {/* 统计 2×2 迷你卡 */}
       <div className="grid grid-cols-2 gap-3 lg:col-span-4">
-        <StatCard label="今日待办" value={data ? total : "-"} tone="blue" />
-        <StatCard label="已完成" value={data ? done : "-"} tone="green" />
-        <StatCard label="已逾期" value={data ? overdue : "-"} tone="red" />
-        <StatCard label="收件箱" value={data ? inbox : "-"} tone="violet" />
+        <StatCard label="今日待办" value={data ? total : "-"} tone="blue" onClick={() => onNav("tasks")} />
+        <StatCard label="已完成" value={data ? done : "-"} tone="green" onClick={() => onNav("tasks")} />
+        <StatCard label="已逾期" value={data ? overdue : "-"} tone="red" onClick={() => onNav("tasks")} />
+        <StatCard label="收件箱" value={data ? inbox : "-"} tone="violet" onClick={() => onNav("inbox")} />
       </div>
 
       {/* 今日任务主卡（逾期置顶分组） */}
@@ -94,7 +94,7 @@ export default function TodayView({
 
       {/* 右栏：最近笔记 + 活跃项目 */}
       <div className="flex flex-col gap-4 lg:col-span-4">
-        <Card>
+        <Card hoverable>
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">最近笔记</h2>
             <button
@@ -106,10 +106,15 @@ export default function TodayView({
           </div>
           <div className="p-3">
             {data && data.recent_notes.length > 0 ? (
-              <ul className="space-y-1.5">
+              <ul className="space-y-0.5">
                 {data.recent_notes.map((n) => (
-                  <li key={n.id} className="truncate text-xs text-ink2">
-                    · {n.title || "(无标题)"}
+                  <li key={n.id}>
+                    <button
+                      onClick={() => onNav("notes")}
+                      className="w-full truncate rounded-md px-1.5 py-1 text-left text-xs text-ink2 transition-colors hover:bg-hover hover:text-ink"
+                    >
+                      · {n.title || "(无标题)"}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -119,7 +124,7 @@ export default function TodayView({
           </div>
         </Card>
 
-        <Card>
+        <Card hoverable>
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">活跃项目</h2>
             <button
@@ -133,9 +138,9 @@ export default function TodayView({
             {data && data.active_projects.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {data.active_projects.map((p) => (
-                  <Badge key={p.id} tone="blue">
-                    {p.name}
-                  </Badge>
+                  <button key={p.id} onClick={() => onNav("projects")} title="查看项目">
+                    <Badge tone="blue">{p.name}</Badge>
+                  </button>
                 ))}
               </div>
             ) : (
