@@ -61,8 +61,10 @@ cargo build -p dashboard-cli
 alias dashboard="$PWD/target/debug/dashboard"
 
 dashboard status
-dashboard task create --title "学习 Rust" --due 2026-08-30
-dashboard task list --today
+dashboard task create --title "喝水" --target 8 --unit 杯 --icon 🥤
+dashboard task checkin tsk_xxx   # 打卡 +1（幂等）
+dashboard task overview tsk_xxx --period week
+dashboard library create --title "考研" --kind countdown --anchor 2026-12-21
 dashboard context today          # AI 一键获取当前状态
 ```
 
@@ -71,19 +73,23 @@ dashboard context today          # AI 一键获取当前状态
 所有命令支持 `--json`，返回稳定信封：
 
 ```bash
-$ dashboard task list --today --json
+$ dashboard task list --json
 {
   "success": true,
-  "data": [ { "id": "tsk_…", "title": "…", "status": "todo", "due_at": "…" } ],
+  "data": [ { "id": "tsk_…", "title": "…", "status": "active", "card_style": "day", "color_hex": "#4A90E2" } ],
   "error": null,
-  "meta": { "schema_version": "1" }
+  "meta": { "schema_version": "2" }
 }
 ```
 
 - **Exit Code**：`0` 成功 · `1` 一般错误 · `2` 参数错误 · `3` 数据不存在 · `5` 冲突
-- **stdin**：`echo '{"title":"...","due":"2026-08-23"}' | dashboard task create --stdin`
+- **stdin**：`echo '{"title":"...","target":8,"unit":"杯"}' | dashboard task create --stdin`
 - **Dry Run**：`dashboard task delete <id> --dry-run`
-- **操作来源标记**：`DASHBOARD_ACTOR=ai dashboard task complete tsk_xxx`（写入审计日志）
+- **幂等打卡**：`dashboard task checkin <id> --operation-id <key>`（重放不重复计数）
+- **操作来源标记**：`DASHBOARD_ACTOR=ai dashboard task checkin tsk_xxx`（写入审计日志）
+
+> 协议 v2（2026-08-30）：任务从 todo 改为长期打卡对象。`complete/reopen` 保留为重映射别名
+> （补满今日目标 / 今日清零），输出带 `deprecated` 提示；`--due`、`--today/--overdue` 已移除。
 
 推荐 Agent 工作流：
 
@@ -112,7 +118,8 @@ Widget Snapshot 协议（`widget.snapshot/v1`）：
     "date": "2026-08-22",
     "task_total": 5,
     "task_completed_today": 3,
-    "overdue_total": 1,
+    "completion_rate": 0.62,
+    "missed_last_7d": 2,
     "inbox_open": 4,
     "next_event": null,
     "current_focus": "Dashboard MVP"
@@ -124,7 +131,8 @@ Widget Snapshot 协议（`widget.snapshot/v1`）：
 
 ## MVP 功能范围
 
-- ✅ Task：创建 / 列表(今天·逾期·状态筛选) / 完成 / 重开 / 更新 / 删除 / 清理已完成
+- ✅ Task（打卡式）：创建(目标/单位/图标/主题色) / 打卡+1 / 减少 / 撤销 / 周月年总览 / 归档恢复 / 四种卡片
+- ✅ DateLibrary：纪念日 / 倒计时日主库、任务归属（历史留痕）、综合热力图、归档三选一
 - ✅ Project：创建 / 归档 / 删除 / 进行中任务数统计
 - ✅ Note：创建 / 编辑 / 删除 / 最近列表
 - ✅ Inbox：快速收集 / 转 Task / 转 Note / 删除

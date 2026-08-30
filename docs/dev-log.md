@@ -5,6 +5,33 @@
 
 ---
 
+## [2026-08-30] Spec 003：打卡式任务 + 日期主库 + 四种任务卡片（任务模块整体替换）
+
+**需求简述**：把 PlanningDays 的任务卡片体系（日/周/月/年卡 + 打卡账本 + 日期主库）完整移植进 AIODashboard，替换 todo 式任务模块；设计语言以圆角矩形为主（+/- 同侧并排），贴合双主题 Bento。
+
+**模式**：Spec（变更包 openspec/changes/003-task-checkin-cards，四件套）
+
+**关键决策**（详见 design.md）：
+- **append-only 打卡账本**：operation_id 唯一约束保证幂等；减少/撤销都是补偿记录；一条正向只补偿一次；撤销只针对正向打卡（不提供撤销的撤销）。
+- **统计口径照搬 PlanningDays 已验证公式**：五态/六态判定、完整完成率、连续天数（不适用日打断）、今日完成率 Σmin(count,target)/Σtarget、主库逐日聚合 min(count/target,1) 求均值。
+- **Task 重构**：status→active/archived；+icon/color_hex/unit/card_style；删 due_at/completed_at；旧数据 todo/doing→active、done→archived，补默认目标区间与活动区间。
+- **日期主库**：纪念日/倒计时日（自然日计算）；任务归属按逻辑日区间，移库今日起生效、历史留原库；归档三选一（保留/转独立/移动）单事务。
+- **协议 v2**：meta.schema_version 1→2；`task complete/reopen` 重映射为「补满今日/今日清零」并带 deprecated 提示；插件桥 setTaskStatus 移除，改 checkinTask/archiveTask（PLUGIN_API.md 三方同步）。
+- **色阶用 color-mix + 任务主题色 hex**：双主题自动成立，不新增语义 token；六态带非颜色通道（虚线/粗框/点/横杠/双点/✓）。
+
+**变更文件**：
+- 后端：`crates/dashboard-domain`（Task 重构 + 5 新实体）、`dashboard-storage`（SCHEMA_V3 + completion/period/library 三 repo）、`dashboard-core`（checkin/day_state/overview/library/logical_day 五模块）
+- 接口：`dashboard-protocol`（v2）、`apps/cli`（checkin/decrement/undo/overview/move + library 命令组）、`apps/desktop/src-tauri`（12 个新 command）
+- 前端：taskVisual.ts、Heatmap/TaskCard/CheckinRow/TaskEditor/TaskDetailView/LibrariesView/LibraryDetailView 七新组件；TasksView 卡片墙化、TodayView 打卡式、TaskRow 删除
+- 测试：core 17 项打卡链路 + integration.rs 打卡/主库/协议 v2 链路
+
+**验证结果**：✅ check.sh 全绿（Rust 50 测试 + vitest 22 + 前端构建）；双主题真机走查待用户验收（tasks.md 保留两项未勾）。
+
+**下一步**：真机走查验收；已知遗留（StatCard 环比、项目 snapshot 刷新 plan）不变。
+
+---
+
+
 ## [2026-08-30] Spec 管理升级：采用 OpenSpec 四件套变更包
 
 **需求简述**：用户指定以自身财务分析项目（Web_Financial_Analyse/openspec）的 OpenSpec 规范为准——今后 Spec 一律按「变更包四件套」生成，当天早些时候建立的单文件 spec 模式随即废弃。
