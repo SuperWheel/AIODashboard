@@ -5,6 +5,29 @@
 
 ---
 
+## [2026-08-30] 接入 GitHub 远端
+
+**需求简述**：创建与项目同名的私人 GitHub 仓库并推送现有提交。
+
+**模式**：Vibe
+
+**关键决策**：
+- 仓库：`SuperWheel/AIODashboard`（private，默认分支 main），`gh repo create --source=. --remote=origin --push` 一步完成。
+- 推送前用 filter-branch 把三笔提交的作者从占位 `leeyl@local` 重写为 GitHub noreply 身份 `67827727+SuperWheel@users.noreply.github.com`，使提交正确归属账号（哈希因此变为 c66c58c/731651e/ce1a28f）。
+- token 已含 `workflow` scope，`.github/workflows/ci.yml` 可直接推送（推送即触发 CI）。
+
+**变更文件**：
+- 远端仓库 + `origin` remote 配置 + 本地 git user.email
+- `docs/dev-log.md` — 本条记录
+
+**验证结果**：
+- ✅ 远端 visibility=PRIVATE，default branch=main，HEAD 与本地一致
+- ✅ ci.yml 已存在于远端；push 触发的 CI 运行结果见 Actions 页
+
+**下一步**：进入 Phase 2（AI Interface：--request-id 幂等 / 权限策略 / JSON Schema）或 Phase 3（SwiftUI Widget）。
+
+---
+
 ## [2026-08-30] 仓库初始化与切片提交
 
 **需求简述**：按上次规划的下一步，`git init` 并将现有 MVP 代码按可验证切片提交。
