@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import type { SearchHit, SearchKind } from "../types";
+import type { RegisteredCommand } from "../plugins/registry";
 
 const KIND_META: Record<SearchKind, { label: string; cls: string }> = {
   task: { label: "任务", cls: "bg-emerald-500/15 text-emerald-300" },
@@ -13,15 +14,26 @@ export default function SearchPalette({
   open,
   onClose,
   onNavigate,
+  commands = [],
+  onRunCommand,
 }: {
   open: boolean;
   onClose: () => void;
   onNavigate: (kind: SearchKind) => void;
+  /** 插件命令（ModuleRegistry 注入），空查询时全部展示、输入时按标题过滤 */
+  commands?: RegisteredCommand[];
+  onRunCommand: (cmd: RegisteredCommand) => void;
 }) {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const timer = useRef<number | null>(null);
+
+  const matchedCommands = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    if (!query) return commands;
+    return commands.filter((c) => c.title.toLowerCase().includes(query));
+  }, [q, commands]);
 
   useEffect(() => {
     if (open) {
@@ -73,11 +85,32 @@ export default function SearchPalette({
           className="w-full border-b border-white/10 bg-transparent px-5 py-4 text-sm outline-none placeholder:text-slate-600"
         />
         <div className="max-h-[50vh] overflow-y-auto p-2">
+          {matchedCommands.length > 0 && (
+            <div className="mb-1">
+              <p className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-slate-600">
+                插件命令
+              </p>
+              {matchedCommands.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => onRunCommand(c)}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/[0.05]"
+                >
+                  <span className="shrink-0 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
+                    命令
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-200">{c.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {!q.trim() ? (
-            <p className="px-3 py-6 text-center text-xs text-slate-600">
-              输入关键词，回车或点击结果跳转 · Esc 关闭
-            </p>
-          ) : hits.length === 0 ? (
+            matchedCommands.length > 0 ? null : (
+              <p className="px-3 py-6 text-center text-xs text-slate-600">
+                输入关键词，回车或点击结果跳转 · Esc 关闭
+              </p>
+            )
+          ) : hits.length === 0 && matchedCommands.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-slate-600">无匹配结果</p>
           ) : (
             hits.map((h) => (

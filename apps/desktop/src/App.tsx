@@ -21,7 +21,6 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   // 插件注册表变化时强制重渲染（注册/卸载贡献点）
   const [pluginsVersion, setPluginsVersion] = useState(0);
-  const bump = () => setRefreshKey((k) => k + 1);
 
   const registryRef = useRef<ModuleRegistry | null>(null);
   const eventsRef = useRef<EventBus | null>(null);
@@ -72,9 +71,28 @@ export default function App() {
   }
   const registry = registryRef.current;
 
+  // bump = 本地变更信号：刷新数据 + 通知插件（panel.refresh）
+  const bump = () => {
+    eventsRef.current?.emit("panel.refresh", null);
+    setRefreshKey((k) => k + 1);
+  };
+
   const loadToday = () => api.getToday().then(setToday).catch(console.error);
 
   usePolling(loadToday, 4000, [refreshKey]);
+
+  // 面板可见性事件：插件可跟随面板状态（panel.show / panel.hide）
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        eventsRef.current?.emit("panel.show", null);
+      } else {
+        eventsRef.current?.emit("panel.hide", null);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -163,6 +181,15 @@ export default function App() {
           };
           setView(map[kind] ?? "today");
           setPaletteOpen(false);
+        }}
+        commands={registry.commands}
+        onRunCommand={(cmd) => {
+          void Promise.resolve(cmd.handler())
+            .catch((e) => alert(`命令执行失败: ${String(e)}`))
+            .finally(() => {
+              bump();
+              setPaletteOpen(false);
+            });
         }}
       />
     </div>

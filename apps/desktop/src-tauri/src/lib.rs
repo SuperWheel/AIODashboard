@@ -7,6 +7,7 @@ use dashboard_core as core;
 use dashboard_domain::{Actor, Note, Project, Task};
 use dashboard_storage as storage;
 use rusqlite::Connection;
+use tauri::Manager;
 
 type R<T> = Result<T, String>;
 
@@ -319,6 +320,50 @@ async fn plugin_http_fetch(plugin_id: String, url: String) -> R<serde_json::Valu
 
 pub fn run() {
     tauri::Builder::default()
+        .on_window_event(|window, event| {
+            // 关窗 = 隐藏到托盘：面板后台留存，插件随面板继续运行（plugin-system/v1 决策）
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
+        .setup(|app| {
+            use tauri::{
+                menu::{Menu, MenuItem},
+                tray::{TrayIconBuilder, TrayIconEvent},
+            };
+            let show = MenuItem::with_id(app, "show", "显示面板", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &quit])?;
+            let mut builder = TrayIconBuilder::with_id("main-tray")
+                .tooltip("AIODashboard")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                });
+            if let Some(icon) = app.default_window_icon() {
+                builder = builder.icon(icon.clone());
+            }
+            builder.build(app)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_today,
             list_tasks,
