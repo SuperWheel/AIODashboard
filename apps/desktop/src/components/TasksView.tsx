@@ -1,111 +1,167 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { localToday, usePolling } from "../hooks";
-import type { Task } from "../types";
-import TaskRow from "./TaskRow";
-import { Button, Card, Empty, PageHeader, SectionTitle } from "./ui";
+import { usePolling } from "../hooks";
+import type { Task, TaskDayView } from "../types";
+import TaskCard from "./TaskCard";
+import TaskDetailView from "./TaskDetailView";
+import TaskEditor from "./TaskEditor";
+import { Button, Empty, PageHeader } from "./ui";
 import { toastError } from "./DialogHost";
 
-type Tab = "open" | "today" | "overdue" | "done" | "all";
+type Tab = "active" | "archived";
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: "open", label: "未完成" },
-  { key: "today", label: "今天" },
-  { key: "overdue", label: "已逾期" },
-  { key: "done", label: "已完成" },
-  { key: "all", label: "全部" },
-];
-
+/**
+ * 任务页 = 卡片墙：每个任务一张卡（日/周/月/年样式可切换）。
+ * navParam = 任务 id 时进入任务详情。
+ */
 export default function TasksView({
   refreshKey,
   onChanged,
   navParam,
+  onNav,
 }: {
   refreshKey: number;
   onChanged: () => void;
-  /** 跨视图导航参数：Today 统计卡跳转时指定 tab */
   navParam?: string;
+  onNav: (view: string, param?: string) => void;
 }) {
-  const [tab, setTab] = useState<Tab>("open");
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [title, setTitle] = useState("");
-  // 默认今天到期：让「新建的任务」立即可见于 Today 页（清空日期则不排期）
-  const [due, setDue] = useState(localToday());
-  const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<Tab>("active");
+  const [views, setViews] = useState<TaskDayView[]>([]);
+  const [archived, setArchived] = useState<Task[]>([]);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editing, setEditing] = useState<Task | null>(null);
+
+  // navParam 以 tsk_ 开头 → 任务详情
+  const detailId = navParam?.startsWith("tsk_") ? navParam : null;
+
+  const load = () => {
+    api
+      .getToday()
+      .then((t) => setViews(t.today_tasks))
+      .catch(console.error);
+    api
+      .listTasks("archived")
+      .then(setArchived)
+      .catch(console.error);
+  };
+  usePolling(load, 4000, [refreshKey]);
 
   useEffect(() => {
-    if (navParam && TABS.some((t) => t.key === navParam)) setTab(navParam as Tab);
+    if (navParam === "archived") setTab("archived");
+    if (navParam === "active") setTab("active");
   }, [navParam]);
 
-  const load = () => api.listTasks(tab).then(setTasks).catch(console.error);
-  usePolling(load, 4000, [tab, refreshKey]);
-
-  const add = async () => {
-    const t = title.trim();
-    if (!t || busy) return;
-    setBusy(true);
-    try {
-      await api.createTask(t, due || undefined);
-      setTitle("");
-      setDue(localToday());
-      onChanged();
-    } catch (e) {
-      toastError(String(e));
-    } finally {
-      setBusy(false);
-    }
+  const openEditor = (task: Task | null) => {
+    setEditing(task);
+    setEditorOpen(true);
   };
+
+  if (detailId) {
+    const task = views.find((v) => v.task.id === detailId)?.task ?? archived.find((t) => t.id === detailId);
+    return (
+      <TaskDetailView
+        taskId={detailId}
+        refreshKey={refreshKey}
+        onChanged={onChanged}
+        onBack={() => onNav("tasks")}
+        onEdit={() => task && openEditor(task)}
+      />
+    );
+  }
 
   return (
     <div>
-      <PageHeader title="任务" count={tasks.length} desc="创建、追踪、完成；⌘K 可全局搜索" />
+      <PageHeader
+        title="任务"
+        count={views.length}
+        desc="长期打卡对象：每个自然日都可以重新打卡"
+        actions={<Button onClick={() => openEditor(null)}>＋ 新建任务</Button>}
+      />
 
-      <div className="mt-5 flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2">
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && add()}
-          placeholder="新任务标题，回车创建…"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink3"
-        />
-        <input
-          type="date"
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-          className="rounded-md border border-line bg-transparent px-2 py-1 text-xs text-ink2 outline-none"
-        />
-        <Button onClick={add} disabled={!title.trim() || busy}>
-          添加
-        </Button>
+      <div className="mt-4 flex gap-1">
+        {(
+          [
+            { key: "active", label: "进行中" },
+            { key: "archived", label: `已归档（${archived.length}）` },
+          ] as { key: Tab; label: string }[]
+        ).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
+              tab === t.key ? "bg-accent/10 font-medium text-accent" : "text-ink3 hover:text-ink"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
-      <p className="mt-1.5 text-[11px] text-ink3">默认今天到期；清空日期则不排期（不出现在「今天」页）</p>
 
-      <SectionTitle>
-        <div className="flex gap-1">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
-                tab === t.key
-                  ? "bg-accent/10 font-medium text-accent"
-                  : "text-ink3 hover:text-ink"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </SectionTitle>
+      {tab === "active" &&
+        (views.length === 0 ? (
+          <div className="mt-4">
+            <Empty
+              text="还没有进行中的任务，新建一个开始打卡"
+              glyph="☑"
+              action={<Button onClick={() => openEditor(null)}>新建任务</Button>}
+            />
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {views.map((v) => (
+              <TaskCard
+                key={v.task.id}
+                view={v}
+                refreshKey={refreshKey}
+                onChanged={onChanged}
+                onOpenDetail={(id) => onNav("tasks", id)}
+                onEdit={openEditor}
+              />
+            ))}
+          </div>
+        ))}
 
-      {tasks.length === 0 ? (
-        <Empty text="这里空空如也" glyph="☑" />
-      ) : (
-        <Card>
-          {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} onChanged={onChanged} />
-          ))}
-        </Card>
+      {tab === "archived" &&
+        (archived.length === 0 ? (
+          <div className="mt-4">
+            <Empty text="没有已归档的任务" glyph="🗃" />
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-line bg-surface">
+            {archived.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center gap-3 border-b border-line/60 px-4 py-2.5 last:border-b-0"
+              >
+                <span className="text-sm text-ink3">{t.icon || "✓"}</span>
+                <span className="flex-1 truncate text-sm text-ink2">{t.title}</span>
+                <Button variant="ghost" onClick={() => openEditor(t)}>
+                  查看
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={async () => {
+                    try {
+                      await api.restoreTask(t.id);
+                      onChanged();
+                    } catch (e) {
+                      toastError(String(e));
+                    }
+                  }}
+                >
+                  恢复
+                </Button>
+              </div>
+            ))}
+          </div>
+        ))}
+
+      {editorOpen && (
+        <TaskEditor
+          task={editing}
+          onClose={() => setEditorOpen(false)}
+          onSaved={onChanged}
+        />
       )}
     </div>
   );

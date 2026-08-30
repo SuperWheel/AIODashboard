@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { api } from "../api";
-import { localToday } from "../hooks";
 import { toastError } from "./DialogHost";
 
 type Target = "today" | "inbox";
 
 const TARGET_META: Record<Target, { label: string; hint: string }> = {
-  today: { label: "今天任务", hint: "⏎ 创建为今天到期的任务" },
+  today: { label: "今天任务", hint: "⏎ 创建为今日打卡任务（默认目标 1 次）" },
   inbox: { label: "收件箱", hint: "⏎ 收集到收件箱，之后再整理" },
 };
 
@@ -31,7 +30,7 @@ export default function QuickCapture({
     setBusy(true);
     try {
       if (target === "today") {
-        await api.createTask(t, localToday());
+        await api.createTask({ title: t });
       } else {
         await api.addInboxItem(t);
       }

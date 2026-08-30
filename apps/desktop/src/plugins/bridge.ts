@@ -24,9 +24,12 @@ export interface PluginApi {
   react: typeof React;
   core: {
     today: () => ReturnType<typeof coreApi.getToday>;
-    listTasks: (scope?: string) => ReturnType<typeof coreApi.listTasks>;
-    createTask: (title: string, dueAt?: string) => ReturnType<typeof coreApi.createTaskAs>;
-    setTaskStatus: (id: string, status: string) => ReturnType<typeof coreApi.setTaskStatusAs>;
+    listTasks: (scope?: "all" | "active" | "archived") => ReturnType<typeof coreApi.listTasks>;
+    createTask: (title: string, target?: number) => ReturnType<typeof coreApi.createTaskAs>;
+    /** 打卡 +1（幂等） */
+    checkinTask: (id: string) => ReturnType<typeof coreApi.checkinAs>;
+    /** 归档任务（停止打卡，历史保留） */
+    archiveTask: (id: string) => Promise<import("../types").Task>;
     deleteTask: (id: string) => ReturnType<typeof coreApi.deleteTaskAs>;
     search: (query: string) => ReturnType<typeof coreApi.searchAll>;
     addInboxItem: (content: string) => ReturnType<typeof coreApi.addInboxItemAs>;
@@ -88,11 +91,11 @@ export function createPluginApi(
 
     core: {
       today: () => coreApi.getToday(),
-      listTasks: (scope?: string) => coreApi.listTasks(scope),
-      createTask: (title: string, dueAt?: string) =>
-        coreApi.createTaskAs(actor, title, dueAt),
-      setTaskStatus: (id: string, status: string) =>
-        coreApi.setTaskStatusAs(actor, id, status),
+      listTasks: (scope?: "all" | "active" | "archived") => coreApi.listTasks(scope),
+      createTask: (title: string, target?: number) =>
+        coreApi.createTaskAs(actor, title, target),
+      checkinTask: (id: string) => coreApi.checkinAs(actor, id),
+      archiveTask: (id: string) => coreApi.archiveTask(id, actor),
       deleteTask: (id: string) => coreApi.deleteTaskAs(actor, id),
       search: (query: string) => coreApi.searchAll(query),
       addInboxItem: (content: string) => coreApi.addInboxItemAs(actor, content),

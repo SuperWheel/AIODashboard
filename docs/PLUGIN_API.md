@@ -74,9 +74,10 @@ export async function onunload() {
 | `api.pluginId` | — | 本插件 id |
 | `api.react` | — | 宿主共享单实例 React：`createElement` `useState` `useEffect` … |
 | `api.core.today()` | 读 | `context today` 同源数据 |
-| `api.core.listTasks(scope?)` | 读 | `"all"/"open"/"done"/"today"/"overdue"` |
-| `api.core.createTask(title, dueAt?)` | 写 | dueAt 为 `YYYY-MM-DD` 或 RFC3339 |
-| `api.core.setTaskStatus(id, status)` | 写 | `"todo"/"doing"/"done"` |
+| `api.core.listTasks(scope?)` | 读 | `"all"/"active"/"archived"`（v2 起；旧 open/done/today/overdue 已移除） |
+| `api.core.createTask(title, target?)` | 写 | 创建打卡任务；target=每日目标（默认 1） |
+| `api.core.checkinTask(id)` | 写 | 打卡 +1（幂等账本） |
+| `api.core.archiveTask(id)` | 写 | 归档任务（停止打卡，历史保留） |
 | `api.core.deleteTask(id)` | 写 | |
 | `api.core.search(query)` | 读 | 全局搜索 |
 | `api.core.addInboxItem(content)` | 写 | |

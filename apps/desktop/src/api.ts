@@ -1,11 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  CardStyle,
+  DateLibrary,
   InboxItem,
+  LibraryListItem,
+  LibraryYearHeatmap,
   Note,
+  PeriodOverview,
   Project,
   ProjectWithStats,
   SearchResults,
   Task,
+  TaskDayView,
   TodayContext,
 } from "./types";
 import type { PluginInfo, PluginManifest } from "./plugins/types";
@@ -27,30 +33,121 @@ export interface PluginFetchResult {
   json: unknown;
 }
 
+export interface CreateTaskParams {
+  title: string;
+  target?: number;
+  unit?: string;
+  icon?: string;
+  color?: string;
+  cardStyle?: CardStyle;
+  projectId?: string | null;
+  libraryId?: string | null;
+  actor?: string;
+}
+
+export interface UpdateTaskParams {
+  id: string;
+  title?: string;
+  target?: number;
+  unit?: string;
+  icon?: string;
+  color?: string;
+  cardStyle?: CardStyle;
+  /** 显式 null = 移出项目；不传 = 不修改 */
+  projectId?: string | null;
+  actor?: string;
+}
+
 export const api = {
   // Today / Tasks
   getToday: () => invoke<TodayContext>("get_today"),
-  listTasks: (scope?: string) => invoke<Task[]>("list_tasks", { scope }),
-  createTask: (title: string, dueAt?: string, projectId?: string) =>
+  listTasks: (scope?: "all" | "active" | "archived") =>
+    invoke<Task[]>("list_tasks", { scope }),
+  createTask: (params: CreateTaskParams) =>
     invoke<Task>("create_task", {
-      title,
-      dueAt: dueAt || null,
-      projectId: projectId || null,
+      params: {
+        title: params.title,
+        target: params.target ?? null,
+        unit: params.unit ?? null,
+        icon: params.icon ?? null,
+        color: params.color ?? null,
+        cardStyle: params.cardStyle ?? null,
+        projectId: params.projectId ?? null,
+        libraryId: params.libraryId ?? null,
+        actor: params.actor ?? null,
+      },
     }),
-  setTaskStatus: (id: string, status: string) =>
-    invoke<Task>("set_task_status", { id, status }),
+  updateTask: (params: UpdateTaskParams) =>
+    invoke<Task>("update_task", {
+      params: {
+        id: params.id,
+        title: params.title ?? null,
+        target: params.target ?? null,
+        unit: params.unit ?? null,
+        icon: params.icon ?? null,
+        color: params.color ?? null,
+        cardStyle: params.cardStyle ?? null,
+        projectId: params.projectId === undefined ? null : params.projectId,
+        actor: params.actor ?? null,
+      },
+    }),
+  archiveTask: (id: string, actor?: string) =>
+    invoke<Task>("archive_task", { id, actor: actor ?? null }),
+  restoreTask: (id: string, actor?: string) =>
+    invoke<Task>("restore_task", { id, actor: actor ?? null }),
   deleteTask: (id: string) => invoke<void>("delete_task", { id }),
 
-  // 带 actor 的写入（插件桥使用；审计 actor=plugin:<id>）
-  createTaskAs: (actor: string, title: string, dueAt?: string, projectId?: string) =>
-    invoke<Task>("create_task", {
-      title,
-      dueAt: dueAt || null,
-      projectId: projectId || null,
-      actor,
+  // Check-in
+  taskCheckin: (id: string, actor?: string) =>
+    invoke<TaskDayView>("task_checkin", { id, operationId: null, actor: actor ?? null }),
+  taskDecrement: (id: string, actor?: string) =>
+    invoke<TaskDayView>("task_decrement", { id, operationId: null, actor: actor ?? null }),
+  taskUndo: (id: string, actor?: string) =>
+    invoke<TaskDayView>("task_undo", { id, operationId: null, actor: actor ?? null }),
+  taskOverview: (id: string, period: "week" | "month" | "year", anchor?: string) =>
+    invoke<PeriodOverview>("task_overview", { id, period, anchor: anchor ?? null }),
+
+  // Date Libraries
+  listLibraries: (includeArchived = false) =>
+    invoke<LibraryListItem[]>("list_libraries", { includeArchived }),
+  createLibrary: (params: {
+    title: string;
+    kind: "anniversary" | "countdown";
+    anchorDay: string;
+    note?: string;
+    icon?: string;
+    color?: string;
+  }) =>
+    invoke<DateLibrary>("create_library", {
+      title: params.title,
+      kind: params.kind,
+      anchorDay: params.anchorDay,
+      note: params.note ?? null,
+      icon: params.icon ?? null,
+      color: params.color ?? null,
     }),
-  setTaskStatusAs: (actor: string, id: string, status: string) =>
-    invoke<Task>("set_task_status", { id, status, actor }),
+  updateLibrary: (id: string, params: { title?: string; note?: string; icon?: string; color?: string; anchorDay?: string }) =>
+    invoke<DateLibrary>("update_library", {
+      id,
+      title: params.title ?? null,
+      note: params.note ?? null,
+      icon: params.icon ?? null,
+      color: params.color ?? null,
+      anchorDay: params.anchorDay ?? null,
+    }),
+  archiveLibrary: (id: string, mode: "keep" | "detach" | "move_to", moveTo?: string) =>
+    invoke<DateLibrary>("archive_library", { id, mode, moveTo: moveTo ?? null }),
+  restoreLibrary: (id: string) => invoke<DateLibrary>("restore_library", { id }),
+  libraryTasks: (libraryId: string) => invoke<Task[]>("library_tasks", { libraryId }),
+  libraryHeatmap: (libraryId: string, anchor?: string) =>
+    invoke<LibraryYearHeatmap>("library_heatmap", { libraryId, anchor: anchor ?? null }),
+  moveTaskLibrary: (id: string, libraryId: string | null) =>
+    invoke<Task>("move_task_library", { id, libraryId }),
+
+  // 带 actor 的写入（插件桥使用；审计 actor=plugin:<id>）
+  createTaskAs: (actor: string, title: string, target?: number) =>
+    api.createTask({ title, target, actor }),
+  checkinAs: (actor: string, id: string) => api.taskCheckin(id, actor),
   deleteTaskAs: (actor: string, id: string) =>
     invoke<void>("delete_task", { id, actor }),
   createNoteAs: (actor: string, title: string, body: string) =>

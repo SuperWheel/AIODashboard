@@ -6,6 +6,7 @@ import type { TodayContext } from "./types";
 import Sidebar from "./components/Sidebar";
 import TodayView from "./components/TodayView";
 import TasksView from "./components/TasksView";
+import LibrariesView from "./components/LibrariesView";
 import ProjectsView from "./components/ProjectsView";
 import NotesView from "./components/NotesView";
 import InboxView from "./components/InboxView";
@@ -54,7 +55,26 @@ export default function App() {
       title: "任务",
       icon: "☑",
       component: (p) => (
-        <TasksView refreshKey={p.refreshKey} onChanged={p.onChanged} navParam={p.navParam} />
+        <TasksView
+          refreshKey={p.refreshKey}
+          onChanged={p.onChanged}
+          navParam={p.navParam}
+          onNav={p.onNav}
+        />
+      ),
+    });
+    registry.registerView({
+      owner: "core",
+      key: "libraries",
+      title: "主库",
+      icon: "📅",
+      component: (p) => (
+        <LibrariesView
+          refreshKey={p.refreshKey}
+          onChanged={p.onChanged}
+          navParam={p.navParam}
+          onNav={p.onNav}
+        />
       ),
     });
     registry.registerView({
