@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { createPluginApi, type PluginDeps } from "../bridge";
+import { CronRegistry } from "../crons";
 import { EventBus } from "../events";
 import { ModuleRegistry } from "../registry";
 import type { PluginManifest } from "../types";
@@ -24,7 +25,6 @@ vi.mock("../../api", () => ({
     pluginHttpFetch: vi.fn(async () => ({ status: 200, text: "{}", json: {} })),
   },
 }));
-
 import { api as coreApi } from "../../api";
 
 const manifest = (perms: PluginManifest["permissions"]): PluginManifest => ({
@@ -35,10 +35,11 @@ const manifest = (perms: PluginManifest["permissions"]): PluginManifest => ({
   permissions: perms,
 });
 
-function makeDeps(): PluginDeps & { registry: ModuleRegistry; events: EventBus } {
+function makeDeps(): PluginDeps & { registry: ModuleRegistry; events: EventBus; crons: CronRegistry } {
   return {
     registry: new ModuleRegistry(),
     events: new EventBus(),
+    crons: new CronRegistry(),
     onChanged: () => {},
   };
 }
@@ -100,5 +101,20 @@ describe("API 桥权限执行", () => {
     expect(() =>
       apiObj.ui.registerTodayCard({ id: "card", title: "Echo", component: FakeComponent }),
     ).toThrow(/冲突/);
+  });
+
+  it("registerCron 需要 manifest 声明该表达式；声明后进入 cron 注册表", () => {
+    const deps = makeDeps();
+    const apiObj = createPluginApi(
+      "com.test.echo",
+      manifest({ cron: ["*/1 * * * *"] }),
+      deps,
+    );
+
+    expect(() => apiObj.registerCron("0 9 * * *", () => {})).toThrow(/cron 权限/);
+    expect(deps.crons.size).toBe(0);
+
+    apiObj.registerCron("*/1 * * * *", () => {});
+    expect(deps.crons.size).toBe(1);
   });
 });

@@ -5,6 +5,7 @@
 import * as React from "react";
 import { api as coreApi } from "../api";
 import { extractHost } from "./manifest";
+import type { CronRegistry } from "./crons";
 import type { EventBus } from "./events";
 import type { ModuleRegistry } from "./registry";
 import type { PluginManifest } from "./types";
@@ -12,6 +13,7 @@ import type { PluginManifest } from "./types";
 export interface PluginDeps {
   registry: ModuleRegistry;
   events: EventBus;
+  crons: CronRegistry;
   /** 注册贡献点后通知宿主重渲染 */
   onChanged: () => void;
 }
@@ -41,6 +43,8 @@ export interface PluginApi {
     on: (topic: string, handler: (payload: unknown) => void) => () => void;
     emit: (topic: string, payload: unknown) => void;
   };
+  /** 注册 cron（Rust 侧驱动，后台不被定时器节流影响）；expr 必须在 manifest 声明 */
+  registerCron: (expr: string, handler: () => void | Promise<void>) => void;
   ui: {
     registerTodayCard: (card: {
       id: string;
@@ -121,6 +125,13 @@ export function createPluginApi(
         return deps.events.on(topic, pluginId, handler);
       },
       emit: (topic: string, payload: unknown) => deps.events.emit(topic, payload),
+    },
+
+    registerCron: (expr: string, handler: () => void | Promise<void>) => {
+      if (!(perms.cron ?? []).includes(expr)) {
+        throw new Error(`cron 权限未包含 '${expr}'（需在 manifest permissions.cron 声明）`);
+      }
+      deps.crons.on(pluginId, expr, handler);
     },
 
     ui: {

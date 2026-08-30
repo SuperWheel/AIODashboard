@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { usePolling } from "./hooks";
 import { api } from "./api";
 import type { TodayContext } from "./types";
@@ -10,9 +11,12 @@ import NotesView from "./components/NotesView";
 import InboxView from "./components/InboxView";
 import SearchPalette from "./components/SearchPalette";
 import PluginsView from "./components/PluginsView";
+import PluginApprovalModal from "./components/PluginApprovalModal";
 import { EventBus } from "./plugins/events";
+import { CronRegistry } from "./plugins/crons";
 import { ModuleRegistry, type PluginCardProps } from "./plugins/registry";
-import { loadAllPlugins, type LoadedPlugin } from "./plugins/loader";
+import { loadAllPlugins, loadPlugin, type LoadedPlugin, type PluginHostOptions } from "./plugins/loader";
+import type { PluginInfo } from "./plugins/types";
 
 export default function App() {
   const [view, setView] = useState<string>("today");
@@ -22,9 +26,12 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   // 插件注册表变化时强制重渲染（注册/卸载贡献点）
   const [pluginsVersion, setPluginsVersion] = useState(0);
+  // 等待权限确认的新发现插件
+  const [pendingPlugins, setPendingPlugins] = useState<PluginInfo[]>([]);
 
   const registryRef = useRef<ModuleRegistry | null>(null);
   const eventsRef = useRef<EventBus | null>(null);
+  const cronsRef = useRef<CronRegistry | null>(null);
   const pluginsRef = useRef<LoadedPlugin[]>([]);
 
   if (!registryRef.current) {
@@ -77,7 +84,17 @@ export default function App() {
   if (!eventsRef.current) {
     eventsRef.current = new EventBus();
   }
+  if (!cronsRef.current) {
+    cronsRef.current = new CronRegistry();
+  }
   const registry = registryRef.current;
+
+  const hostOpts = (): PluginHostOptions => ({
+    registry,
+    events: eventsRef.current!,
+    crons: cronsRef.current!,
+    onChanged: bump,
+  });
 
   // bump = 本地变更信号：刷新数据 + 通知插件（panel.refresh）
   const bump = () => {
@@ -104,14 +121,11 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    loadAllPlugins({
-      registry,
-      events: eventsRef.current!,
-      onChanged: bump,
-    })
-      .then((loaded) => {
+    loadAllPlugins(hostOpts())
+      .then(({ plugins, pending }) => {
         if (!cancelled) {
-          pluginsRef.current = loaded;
+          pluginsRef.current = plugins;
+          setPendingPlugins(pending);
           setPluginsVersion((v) => v + 1);
         }
       })
@@ -121,6 +135,82 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Rust cron 调度 → 插件 handler
+  useEffect(() => {
+    const unlisten = listen<{ plugin_id: string; expr: string }>("plugin-cron", (e) => {
+      cronsRef.current?.dispatch(e.payload);
+    });
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  }, []);
+
+  // 插件重载（插件页「重载」按钮 / 开发热载入口）
+  useEffect(() => {
+    const onReload = () => {
+      void (async () => {
+        for (const p of pluginsRef.current) {
+          await p.dispose().catch(() => {});
+        }
+        pluginsRef.current = [];
+        const { plugins, pending } = await loadAllPlugins(hostOpts()).catch((e) => {
+          console.error("[plugins] 重载失败:", e);
+          return { plugins: [] as LoadedPlugin[], pending: [] as PluginInfo[] };
+        });
+        pluginsRef.current = plugins;
+        setPendingPlugins(pending);
+        setPluginsVersion((v) => v + 1);
+        bump();
+      })();
+    };
+    window.addEventListener("reload-plugins", onReload);
+    return () => window.removeEventListener("reload-plugins", onReload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 新插件权限确认
+  const approvePlugin = (info: PluginInfo) => {
+    setPendingPlugins((list) => list.filter((p) => p.id !== info.id));
+    void (async () => {
+      try {
+        await api.pluginSetEnabled(info.id, true);
+        const loaded = await loadPlugin(info.id, hostOpts());
+        pluginsRef.current = [...pluginsRef.current, loaded];
+        setPluginsVersion((v) => v + 1);
+        bump();
+      } catch (e) {
+        console.error(`[plugins] 启用 ${info.id} 失败:`, e);
+      }
+    })();
+  };
+  const dismissPlugin = (info: PluginInfo) => {
+    setPendingPlugins((list) => list.filter((p) => p.id !== info.id));
+    // 登记为停用：不再重复询问，可在插件页随时启用
+    void api.pluginSetEnabled(info.id, false).catch(console.error);
+  };
+
+  // 待确认插件的 manifest（弹窗展示权限用）
+  const [pendingManifests, setPendingManifests] = useState<
+    Record<string, import("./plugins/types").PluginManifest>
+  >({});
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const ms: Record<string, import("./plugins/types").PluginManifest> = {};
+      for (const p of pendingPlugins) {
+        try {
+          ms[p.id] = await api.pluginReadManifest(p.id);
+        } catch {
+          // 读不到时弹窗降级为列表信息
+        }
+      }
+      if (alive) setPendingManifests(ms);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [pendingPlugins]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -177,6 +267,15 @@ export default function App() {
           />
         </div>
       </main>
+      {/* 新插件权限确认（安装时刻） */}
+      {pendingPlugins.length > 0 && (
+        <PluginApprovalModal
+          plugins={pendingPlugins}
+          manifests={pendingManifests}
+          onApprove={approvePlugin}
+          onDismiss={dismissPlugin}
+        />
+      )}
       <SearchPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}

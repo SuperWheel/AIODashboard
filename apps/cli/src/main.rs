@@ -232,6 +232,91 @@ enum PluginCmd {
     Enable { id: String },
     /// 停用插件
     Disable { id: String },
+    /// 创建插件脚手架（零工具链 JS 模板，写入插件目录）
+    New { id: String },
+    /// 校验插件并打印开发信息（manifest / 权限 / 贡献点 / 入口）
+    Dev {
+        /// 只检查该插件；缺省检查全部已发现插件
+        id: Option<String>,
+    },
+}
+
+const SCAFFOLD_MANIFEST: &str = r#"{
+  "id": "{ID}",
+  "name": "{ID}",
+  "version": "0.1.0",
+  "entry": "main.js",
+  "description": "TODO: 一句话描述这个插件",
+  "permissions": {},
+  "contributions": {
+    "today_cards": [{ "id": "card" }],
+    "commands": [{ "id": "hello", "title": "{ID} · 你好" }]
+  }
+}
+"#;
+
+const SCAFFOLD_MAIN: &str = r#"// TODO: 实现你的插件。API 速查见本目录 AGENTS.md 与 docs/PLUGIN_API.md。
+export async function onload(api) {
+  const h = api.react.createElement;
+
+  // Today 卡片
+  api.ui.registerTodayCard({
+    id: "card",
+    title: "TODO",
+    component: (props) =>
+      h(
+        "div",
+        { className: "rounded-xl border border-white/10 bg-[#161a22] px-4 py-3" },
+        h("div", { className: "text-xs font-medium text-emerald-300" }, "{ID}"),
+        h("div", { className: "mt-1 text-xs text-slate-400" }, "编辑 main.js 后在「插件」页点「重载」即可热更新。"),
+      ),
+  });
+
+  // ⌘K 命令
+  api.ui.registerCommand({
+    id: "hello",
+    title: "{ID} · 你好",
+    handler: () => api.log.info("hello from {ID}"),
+  });
+
+  api.log.info("onload 完成");
+}
+
+export async function onunload() {}
+"#;
+
+const SCAFFOLD_AGENTS: &str = r#"# {ID}（AI 开发说明）
+
+## 契约
+- `manifest.json`：id 为反向域名且必须等于目录名；`permissions` 未声明即无权。
+- `main.js`：ESM 入口，导出 `onload(api)` / 可选 `onunload()`。
+
+## Plugin API
+- `api.react`：宿主共享单实例 React（createElement / hooks）
+- `api.core`：today / listTasks / createTask / setTaskStatus / deleteTask / search / addInboxItem / createNote（写操作 actor=plugin:<id> 入审计）
+- `api.storage.kv`：get / set / delete / list（按插件命名空间隔离，跨重启持久）
+- `api.fetch(url)`：host 必须在 permissions.network 白名单
+- `api.events.on(topic, fn)`：领域事件需 permissions.events 声明；panel.refresh/show/hide 豁免
+- `api.registerCron(expr, fn)`：expr 需 permissions.cron 声明（Rust 侧驱动，后台不受定时器节流影响）
+- `api.ui`：registerTodayCard / registerView / registerCommand
+- `api.log.info|warn|error`
+
+## 推荐模式
+权威状态存 kv 时间戳（而非组件内存）：重启、托盘后台均一致。组件内 interval 只管渲染。
+
+## 验证
+面板「插件」页 → 重载；或 `dashboard plugin dev {ID}` 校验、`dashboard activity --limit 20` 查审计。
+"#;
+
+fn write_scaffold(dir: &std::path::Path, id: &str) -> CoreResult<()> {
+    let manifest = SCAFFOLD_MANIFEST.replace("{ID}", id);
+    let main_js = SCAFFOLD_MAIN.replace("{ID}", id);
+    let agents = SCAFFOLD_AGENTS.replace("{ID}", id);
+    std::fs::write(dir.join("manifest.json"), manifest)
+        .and_then(|_| std::fs::write(dir.join("main.js"), main_js))
+        .and_then(|_| std::fs::write(dir.join("AGENTS.md"), agents))
+        .map_err(|e| CoreError::Validation(format!("写入脚手架失败: {e}")))?;
+    Ok(())
 }
 
 /// 接口层输出：人类文本 + JSON 数据。
@@ -841,6 +926,79 @@ fn plugin_cmd(cmd: PluginCmd) -> CoreResult<Out> {
             Ok(Out {
                 text: format!("已停用插件 {id}"),
                 data: json!({ "id": id, "enabled": false }),
+            })
+        }
+        PluginCmd::New { id } => {
+            plugin_service::validate_plugin_id(&id)?;
+            let dir = plugin_manifest::plugins_root().join(&id);
+            if dir.exists() {
+                return Err(CoreError::Conflict(format!(
+                    "插件目录已存在: {}",
+                    dir.display()
+                )));
+            }
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| CoreError::Validation(format!("创建目录失败: {e}")))?;
+            write_scaffold(&dir, &id)?;
+            Ok(Out {
+                text: format!(
+                    "已创建插件脚手架 {}\n下一步：编辑 main.js 实现功能，然后在面板「插件」页启用并重载。",
+                    dir.display()
+                ),
+                data: json!({ "id": id, "dir": dir.display().to_string() }),
+            })
+        }
+        PluginCmd::Dev { id } => {
+            let root = plugin_manifest::plugins_root();
+            let targets: Vec<String> = match id {
+                Some(one) => vec![one],
+                None => plugin_manifest::scan_plugins_dir(&root)
+                    .iter()
+                    .filter_map(|d| d.manifest.as_ref().map(|m| m.id.clone()))
+                    .collect(),
+            };
+            if targets.is_empty() {
+                return Err(CoreError::NotFound("plugin（插件目录为空）".into()));
+            }
+            let mut text = String::new();
+            let mut report: Vec<Value> = Vec::new();
+            for t in &targets {
+                let dir = root.join(t);
+                if !dir.is_dir() {
+                    return Err(CoreError::NotFound(format!("plugin {t}")));
+                }
+                let m = plugin_manifest::load_from_dir(&dir)?;
+                let entry_bytes = std::fs::metadata(dir.join(&m.entry))
+                    .map_err(|e| CoreError::Validation(format!("读取入口文件失败: {e}")))?
+                    .len();
+                let perms = &m.permissions;
+                let contrib = &m.contributions;
+                text.push_str(&format!(
+                    "✓ {t}  v{}  entry={} ({} B)\n  权限: network={:?} events={:?} cron={:?}\n  贡献: 卡片 {} · 视图 {} · 命令 {}\n",
+                    m.version,
+                    m.entry,
+                    entry_bytes,
+                    perms.network,
+                    perms.events,
+                    perms.cron,
+                    contrib.today_cards.len(),
+                    contrib.views.len(),
+                    contrib.commands.len(),
+                ));
+                report.push(json!({
+                    "id": m.id, "version": m.version, "entry": m.entry,
+                    "entry_bytes": entry_bytes,
+                    "permissions": { "network": perms.network, "events": perms.events, "cron": perms.cron },
+                    "contributions": {
+                        "today_cards": contrib.today_cards.len(),
+                        "views": contrib.views.len(),
+                        "commands": contrib.commands.len(),
+                    },
+                }));
+            }
+            Ok(Out {
+                text,
+                data: json!(report),
             })
         }
     }

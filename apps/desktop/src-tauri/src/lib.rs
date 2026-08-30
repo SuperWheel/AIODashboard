@@ -3,6 +3,8 @@
 //! 所有 Command 只做参数转换，业务全部委托 dashboard-core。
 //! 与 CLI 平级：GUI 创建的任务 = CLI 创建的任务。
 
+pub mod plugin_cron;
+
 use dashboard_core as core;
 use dashboard_domain::{Actor, Note, Project, Task};
 use dashboard_storage as storage;
@@ -218,17 +220,25 @@ fn plugin_read_manifest(id: String) -> R<core::plugin_manifest::PluginManifest> 
 }
 
 #[tauri::command]
-fn plugin_set_enabled(id: String, enabled: bool) -> R<dashboard_domain::PluginRegistration> {
+fn plugin_set_enabled(
+    app: tauri::AppHandle,
+    id: String,
+    enabled: bool,
+) -> R<dashboard_domain::PluginRegistration> {
     checked_plugin_id(&id)?;
     let c = conn()?;
-    core::plugin_service::set_plugin_enabled(
+    let reg = core::plugin_service::set_plugin_enabled(
         &c,
         &core::plugin_manifest::plugins_root(),
         &id,
         enabled,
         Actor::User,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    drop(c);
+    // 启停可能改变 cron 声明集，重排调度
+    app.state::<plugin_cron::CronScheduler>().rescan(&app);
+    Ok(reg)
 }
 
 /// 返回插件入口 JS 源码（前端 loader 拿去 blob import）。停用 / 未注册的插件拒绝加载。
@@ -320,6 +330,7 @@ async fn plugin_http_fetch(plugin_id: String, url: String) -> R<serde_json::Valu
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(plugin_cron::CronScheduler::default())
         .on_window_event(|window, event| {
             // 关窗 = 隐藏到托盘：面板后台留存，插件随面板继续运行（plugin-system/v1 决策）
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -362,6 +373,9 @@ pub fn run() {
                 builder = builder.icon(icon.clone());
             }
             builder.build(app)?;
+            // 启动时扫描启用插件的 cron 声明并调度
+            app.state::<plugin_cron::CronScheduler>()
+                .rescan(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

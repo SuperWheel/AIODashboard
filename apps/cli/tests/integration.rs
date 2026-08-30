@@ -272,3 +272,32 @@ fn plugin_actor_recorded_in_activity() {
     assert!(out.contains("plugin:com.test.echo"), "{out}");
     assert_eq!(task.title, "插件创建的任务");
 }
+
+/// P3：plugin new 脚手架 → dev 校验 → 重复创建冲突。
+#[test]
+fn plugin_new_and_dev_roundtrip() {
+    let env = Env::new();
+
+    // new：生成脚手架
+    let (code, out) = env.cli(&["plugin", "new", "com.test.scaffold", "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let dir = env.plugins_dir.join("com.test.scaffold");
+    assert!(dir.join("manifest.json").is_file());
+    assert!(dir.join("main.js").is_file());
+    assert!(dir.join("AGENTS.md").is_file());
+
+    // dev：校验通过并输出贡献点统计
+    let (code, out) = env.cli(&["plugin", "dev", "com.test.scaffold", "--json"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("today_cards"), "{out}");
+
+    // 重复 new → 冲突（exit 5）
+    let (code, out) = env.cli(&["plugin", "new", "com.test.scaffold", "--json"]);
+    assert_eq!(code, 5, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["error"]["code"], "conflict");
+
+    // dev 指向不存在的插件 → exit 3
+    let (code, _) = env.cli(&["plugin", "dev", "com.test.missing", "--json"]);
+    assert_eq!(code, 3);
+}
