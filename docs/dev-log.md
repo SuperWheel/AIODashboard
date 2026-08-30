@@ -5,7 +5,22 @@
 
 ---
 
-## [2026-08-30] 修复真机走查三问题：插件热加载 / 卡片可交互 / 输入法误触
+## [2026-08-30] 修复走查三问题②：confirm 失效 / 跳转不精确 / 项目可重命名
+
+**需求简述**：真机再反馈——①任务页新建任务首页不显示；②首页卡片跳转到错误的 tab；③项目无法删除、无法重命名。
+
+**模式**：Plan
+
+**根因与修复**：
+- **Tauri(WKWebView) 不支持 `window.confirm/alert`**：confirm 静默返回 false → 所有删除确认失效（③的"无法删除"）；alert 不显示 → 全部错误提示被吞。新增 `DialogHost`（Promise 化 confirmDialog + 右下角 toastError），全组件替换原生调用。这是比前几次都隐蔽的平台坑，已设为硬约束。
+- **导航无参数**（②）：`onNav` 只带视图 key，任务页永远落在默认 tab「未完成」。扩展为 `onNav(v, param?)`（插件协议向后兼容），统计卡分别跳 today/done/overdue tab，最近笔记跳转并选中该条。
+- ①任务页快速添加此前日期留空 = 不排期 → 永远不进 Today。改为默认今天到期（可清空），并加提示文案。
+- **项目重命名走完整六层**：storage `project_repo::update` → core `update_project`（project.update 审计 + snapshot 刷新，因 current_focus 回退到首个活跃项目名）→ CLI `project update` → Tauri command → 项目卡片内联编辑 → 集成测试 `chain_project_update_roundtrip`。
+- 发现既有缺口：project create/archive/delete 均未刷新 snapshot（current_focus 可能陈旧），本次只在 update_project 落实红线，其余留作后续小修复。
+
+**验证结果**：✅ check.sh 全绿（含新增链路测试；Rust 26 + vitest 22 + 集成 12）。
+
+---
 
 **需求简述**：用户真机反馈——①新建任务首页不显示；②启用番茄钟后侧栏和首页都不出现；③希望首页所有卡片可交互。
 
