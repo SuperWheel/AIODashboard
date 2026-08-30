@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { usePolling } from "../hooks";
 import type { ProjectWithStats } from "../types";
-import { Badge, Card, Empty, SectionTitle } from "./ui";
+import { Badge, Button, Card, Empty, PageHeader, SectionTitle } from "./ui";
 
 export default function ProjectsView({
   refreshKey,
@@ -46,7 +46,7 @@ export default function ProjectsView({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">项目</h1>
+      <PageHeader title="项目" count={projects.length} desc="相关任务的分组；归档后不再出现在 Today" />
 
       <SectionTitle>新建项目</SectionTitle>
       <div className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2">
@@ -64,18 +64,14 @@ export default function ProjectsView({
           placeholder="描述（可选）"
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink3"
         />
-        <button
-          onClick={add}
-          disabled={!name.trim() || busy}
-          className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-onaccent hover:bg-accent/90 disabled:opacity-40"
-        >
+        <Button onClick={add} disabled={!name.trim() || busy}>
           创建
-        </button>
+        </Button>
       </div>
 
       <SectionTitle>全部项目</SectionTitle>
       {projects.length === 0 ? (
-        <Empty text="还没有项目，先创建一个吧" />
+        <Empty text="还没有项目，先创建一个吧" glyph="▤" />
       ) : (
         <div className="grid grid-cols-2 gap-3">
           {projects.map((p) => (

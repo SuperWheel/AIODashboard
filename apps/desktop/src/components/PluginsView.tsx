@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { PluginInfo, PluginManifest } from "../plugins/types";
-import { Badge, Card, Empty, SectionTitle } from "./ui";
+import { Badge, Button, Card, Empty, PageHeader, SectionTitle } from "./ui";
 
 const PERM_LABELS: { key: keyof NonNullable<PluginManifest["permissions"]>; label: string }[] = [
   { key: "network", label: "网络" },
@@ -58,18 +58,17 @@ export default function PluginsView({
 
   return (
     <div>
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-ink">插件</h1>
-        <span className="text-xs text-ink3">
-          插件目录：~/Library/Application Support/AIODashboard/plugins/
-        </span>
-      </div>
+      <PageHeader
+        title="插件"
+        count={plugins?.length}
+        desc="插件目录：~/Library/Application Support/AIODashboard/plugins/"
+      />
 
-      <SectionTitle>已发现 {plugins?.length ?? "…"} 个</SectionTitle>
+      <SectionTitle>已发现插件</SectionTitle>
       {!plugins ? (
-        <Empty text="加载中…" />
+        <Empty text="加载中…" glyph="⚙" />
       ) : plugins.length === 0 ? (
-        <Empty text="插件目录为空 · 参考 examples/plugins/ 里的 echo 示例" />
+        <Empty text="插件目录为空 · 参考 examples/plugins/ 里的 echo 示例" glyph="⚙" />
       ) : (
         <div className="space-y-3">
           {plugins.map((p) => {
@@ -95,17 +94,14 @@ export default function PluginsView({
                     )}
                     {p.error && <div className="mt-1 text-xs text-danger">{p.error}</div>}
                   </div>
-                  <button
+                  <Button
+                    variant={state === "on" ? "ghost" : "primary"}
                     onClick={() => toggle(p)}
                     disabled={busy === p.id || state === "error"}
-                    className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 ${
-                      state === "on"
-                        ? "bg-hover text-ink2 hover:text-ink"
-                        : "bg-accent text-onaccent hover:bg-accent/90"
-                    }`}
+                    className="shrink-0"
                   >
                     {state === "on" ? "停用" : "启用"}
-                  </button>
+                  </Button>
                 </div>
 
                 {(perms.network?.length ?? 0) + (perms.events?.length ?? 0) + (perms.cron?.length ?? 0) >

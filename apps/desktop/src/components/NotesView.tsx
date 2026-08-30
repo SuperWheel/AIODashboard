@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { usePolling } from "../hooks";
 import type { Note } from "../types";
-import { Empty } from "./ui";
+import { Button, Empty, PageHeader } from "./ui";
 
 export default function NotesView({
   refreshKey,
@@ -91,14 +91,12 @@ export default function NotesView({
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col">
-      <div className="flex items-center justify-between pb-4">
-        <h1 className="text-xl font-semibold text-ink">笔记</h1>
-        <button
-          onClick={create}
-          className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-onaccent hover:bg-accent/90"
-        >
-          新建笔记
-        </button>
+      <div className="pb-4">
+        <PageHeader
+          title="笔记"
+          count={notes.length}
+          actions={<Button onClick={create}>新建笔记</Button>}
+        />
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4">
@@ -130,7 +128,7 @@ export default function NotesView({
         <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-line bg-surface">
           {!selected ? (
             <div className="flex h-full items-center justify-center">
-              <Empty text="选择或新建一条笔记" />
+              <Empty text="选择或新建一条笔记" glyph="✎" />
             </div>
           ) : (
             <>
@@ -157,19 +155,12 @@ export default function NotesView({
                   {dirty ? "有未保存修改" : "已同步"}
                 </span>
                 <div className="flex gap-2">
-                  <button
-                    onClick={remove}
-                    className="rounded-md border border-line px-2.5 py-1 text-xs text-ink2 hover:text-danger"
-                  >
+                  <Button variant="ghost" onClick={remove} className="hover:text-danger">
                     删除
-                  </button>
-                  <button
-                    onClick={save}
-                    disabled={!dirty}
-                    className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-onaccent hover:bg-accent/90 disabled:opacity-40"
-                  >
+                  </Button>
+                  <Button onClick={save} disabled={!dirty}>
                     保存
-                  </button>
+                  </Button>
                 </div>
               </div>
             </>

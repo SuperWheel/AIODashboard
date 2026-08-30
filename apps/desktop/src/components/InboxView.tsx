@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { usePolling, fmtDateTime } from "../hooks";
 import type { InboxItem } from "../types";
-import { Badge, Card, Empty, SectionTitle } from "./ui";
+import { Badge, Button, Card, Empty, PageHeader, SectionTitle } from "./ui";
 
 export default function InboxView({
   refreshKey,
@@ -46,10 +46,11 @@ export default function InboxView({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">收件箱</h1>
-      <p className="mt-1 text-xs text-ink2">
-        任何暂时不知道放哪里的想法、待办、网址、文本，先丢进这里，之后再整理成任务 / 笔记。
-      </p>
+      <PageHeader
+        title="收件箱"
+        count={items.length}
+        desc="任何暂时不知道放哪里的想法、待办、网址、文本，先丢进这里，之后再整理成任务 / 笔记。"
+      />
 
       <SectionTitle>快速收集</SectionTitle>
       <div className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2">
@@ -60,13 +61,9 @@ export default function InboxView({
           placeholder="一个想法 / 一条待办 / 一个链接…"
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink3"
         />
-        <button
-          onClick={add}
-          disabled={!content.trim() || busy}
-          className="rounded-lg bg-violet px-3 py-1 text-xs font-medium text-onaccent hover:bg-violet/90 disabled:opacity-40"
-        >
+        <Button variant="violet" onClick={add} disabled={!content.trim() || busy}>
           收集
-        </button>
+        </Button>
       </div>
 
       <SectionTitle
@@ -82,11 +79,11 @@ export default function InboxView({
           </label>
         }
       >
-        条目（{items.length}）
+        条目
       </SectionTitle>
 
       {items.length === 0 ? (
-        <Empty text="收件箱是空的" />
+        <Empty text="收件箱是空的" glyph="⬇" />
       ) : (
         <Card>
           {items.map((i) => (

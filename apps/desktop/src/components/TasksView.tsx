@@ -3,7 +3,7 @@ import { api } from "../api";
 import { usePolling } from "../hooks";
 import type { Task } from "../types";
 import TaskRow from "./TaskRow";
-import { Card, Empty, SectionTitle } from "./ui";
+import { Button, Card, Empty, PageHeader, SectionTitle } from "./ui";
 
 type Tab = "open" | "today" | "overdue" | "done" | "all";
 
@@ -49,7 +49,7 @@ export default function TasksView({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">任务</h1>
+      <PageHeader title="任务" count={tasks.length} desc="创建、追踪、完成；⌘K 可全局搜索" />
 
       <div className="mt-5 flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2">
         <input
@@ -65,18 +65,12 @@ export default function TasksView({
           onChange={(e) => setDue(e.target.value)}
           className="rounded-md border border-line bg-transparent px-2 py-1 text-xs text-ink2 outline-none"
         />
-        <button
-          onClick={add}
-          disabled={!title.trim() || busy}
-          className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-onaccent hover:bg-accent/90 disabled:opacity-40"
-        >
+        <Button onClick={add} disabled={!title.trim() || busy}>
           添加
-        </button>
+        </Button>
       </div>
 
-      <SectionTitle
-        right={<span className="text-xs text-ink3">{tasks.length} 个</span>}
-      >
+      <SectionTitle>
         <div className="flex gap-1">
           {TABS.map((t) => (
             <button
@@ -95,7 +89,7 @@ export default function TasksView({
       </SectionTitle>
 
       {tasks.length === 0 ? (
-        <Empty text="这里空空如也" />
+        <Empty text="这里空空如也" glyph="☑" />
       ) : (
         <Card>
           {tasks.map((t) => (
