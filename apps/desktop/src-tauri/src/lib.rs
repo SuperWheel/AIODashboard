@@ -126,6 +126,13 @@ fn archive_project(id: String) -> R<()> {
 }
 
 #[tauri::command]
+fn update_project(id: String, name: Option<String>, description: Option<String>) -> R<Project> {
+    let c = conn()?;
+    core::project_service::update_project(&c, &id, name.as_deref(), description.as_deref(), actor())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn delete_project(id: String) -> R<()> {
     let c = conn()?;
     core::project_service::delete_project(&c, &id, false, actor()).map_err(|e| e.to_string())
@@ -389,6 +396,7 @@ pub fn run() {
             list_projects,
             create_project,
             archive_project,
+            update_project,
             delete_project,
             list_notes,
             create_note,

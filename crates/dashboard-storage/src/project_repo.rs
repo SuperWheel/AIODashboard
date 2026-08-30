@@ -77,6 +77,14 @@ pub fn set_status(conn: &Connection, id: &str, status: ProjectStatus) -> rusqlit
     Ok(())
 }
 
+pub fn update(conn: &Connection, id: &str, name: &str, description: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE projects SET name=?2, description=?3, updated_at=?4 WHERE id=?1",
+        params![id, name, description, write_time(Utc::now())],
+    )?;
+    Ok(())
+}
+
 pub fn delete(conn: &Connection, id: &str) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM projects WHERE id = ?1", params![id])
 }

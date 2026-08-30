@@ -163,6 +163,14 @@ enum ProjectCmd {
     Archive {
         id: String,
     },
+    /// 更新项目名称/描述（至少给一项）
+    Update {
+        id: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+    },
     Delete {
         id: String,
         #[arg(long)]
@@ -708,6 +716,29 @@ fn project_cmd(cmd: ProjectCmd) -> CoreResult<Out> {
             Ok(Out {
                 text: format!("已归档项目 {id}"),
                 data: json!({"archived": id}),
+            })
+        }
+        ProjectCmd::Update {
+            id,
+            name,
+            description,
+        } => {
+            if name.is_none() && description.is_none() {
+                return Err(dashboard_core::CoreError::Validation(
+                    "至少提供 --name 或 --description 之一".into(),
+                ));
+            }
+            let conn = util::open_conn()?;
+            let p = project_service::update_project(
+                &conn,
+                &id,
+                name.as_deref(),
+                description.as_deref(),
+                actor(),
+            )?;
+            Ok(Out {
+                text: format!("已更新项目 {}: {}", p.id, p.name),
+                data: json!(p),
             })
         }
         ProjectCmd::Delete { id, dry_run } => {

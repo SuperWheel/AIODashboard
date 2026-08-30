@@ -130,6 +130,51 @@ fn chain_complete_and_status_sync() {
 }
 
 #[test]
+fn chain_project_update_roundtrip() {
+    let env = Env::new();
+    let (code, out) = env.cli(&[
+        "project",
+        "create",
+        "--name",
+        "旧名字",
+        "--description",
+        "旧描述",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let id = v["data"]["id"].as_str().unwrap().to_string();
+
+    // 重命名 + 改描述
+    let (code, out) = env.cli(&[
+        "project",
+        "update",
+        &id,
+        "--name",
+        "新名字",
+        "--description",
+        "新描述",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"]["name"], "新名字");
+    assert_eq!(v["data"]["description"], "新描述");
+
+    // GUI（Core）视角读到新名字，且审计有 project.update
+    let conn = env.core_conn();
+    let p = dashboard_core::project_service::get_project(&conn, &id).unwrap();
+    assert_eq!(p.name, "新名字");
+    assert_eq!(p.description, "新描述");
+
+    // 参数校验：空名字 / 不给任何字段 → exit code 2
+    let (code, _) = env.cli(&["project", "update", &id, "--name", "  "]);
+    assert_eq!(code, 2);
+    let (code, _) = env.cli(&["project", "update", &id]);
+    assert_eq!(code, 2);
+}
+
+#[test]
 fn ai_error_protocol_not_found_exit_code_3() {
     let env = Env::new();
     let (code, out) = env.cli(&["task", "show", "tsk_does_not_exist", "--json"]);

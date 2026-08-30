@@ -77,6 +77,41 @@ pub fn list_projects_with_stats(conn: &Connection) -> CoreResult<Vec<ProjectWith
     Ok(out)
 }
 
+/// 更新项目名称/描述（None = 保持不变）。
+pub fn update_project(
+    conn: &Connection,
+    id: &str,
+    name: Option<&str>,
+    description: Option<&str>,
+    actor: Actor,
+) -> CoreResult<Project> {
+    let existing = get_project(conn, id)?;
+    let new_name = match name {
+        Some(n) => validate_name(n)?,
+        None => existing.name.clone(),
+    };
+    let new_desc = match description {
+        Some(d) => d.trim().to_string(),
+        None => existing.description.clone(),
+    };
+    project_repo::update(conn, id, &new_name, &new_desc)?;
+    let updated = get_project(conn, id)?;
+    log_activity(
+        conn,
+        chrono::Utc::now(),
+        actor,
+        "project.update",
+        "project",
+        Some(id),
+        &serde_json::json!({
+            "before": { "name": existing.name, "description": existing.description },
+            "after": { "name": updated.name, "description": updated.description },
+        }),
+    );
+    crate::snapshot::refresh(conn);
+    Ok(updated)
+}
+
 /// 归档项目（不删除数据）。
 pub fn archive_project(conn: &Connection, id: &str, actor: Actor) -> CoreResult<()> {
     get_project(conn, id)?;
