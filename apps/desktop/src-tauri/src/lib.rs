@@ -182,6 +182,127 @@ fn search_all(query: String) -> R<core::search_service::SearchResults> {
     core::search_service::search(&c, &query).map_err(|e| e.to_string())
 }
 
+// ---------------- Plugins ----------------
+
+fn checked_plugin_id(id: &str) -> R<()> {
+    core::plugin_service::validate_plugin_id(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn plugin_list() -> R<Vec<core::plugin_service::PluginInfo>> {
+    let c = conn()?;
+    core::plugin_service::list_installed(&c, &core::plugin_manifest::plugins_root())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn plugin_read_manifest(id: String) -> R<core::plugin_manifest::PluginManifest> {
+    checked_plugin_id(&id)?;
+    let dir = core::plugin_manifest::plugins_root().join(&id);
+    core::plugin_manifest::load_from_dir(&dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn plugin_set_enabled(id: String, enabled: bool) -> R<dashboard_domain::PluginRegistration> {
+    checked_plugin_id(&id)?;
+    let c = conn()?;
+    core::plugin_service::set_plugin_enabled(
+        &c,
+        &core::plugin_manifest::plugins_root(),
+        &id,
+        enabled,
+        Actor::User,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// 返回插件入口 JS 源码（前端 loader 拿去 blob import）。停用 / 未注册的插件拒绝加载。
+#[tauri::command]
+fn plugin_load_source(id: String) -> R<String> {
+    checked_plugin_id(&id)?;
+    let c = conn()?;
+    let reg = core::plugin_service::get_registration(&c, &id).map_err(|e| e.to_string())?;
+    if !reg.enabled {
+        return Err(format!("插件 {id} 已停用"));
+    }
+    drop(c);
+    let dir = core::plugin_manifest::plugins_root().join(&id);
+    let m = core::plugin_manifest::load_from_dir(&dir).map_err(|e| e.to_string())?;
+    std::fs::read_to_string(dir.join(&m.entry)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn plugin_kv_get(plugin_id: String, key: String) -> R<Option<String>> {
+    checked_plugin_id(&plugin_id)?;
+    let c = conn()?;
+    core::plugin_service::kv_get(&c, &plugin_id, &key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn plugin_kv_set(plugin_id: String, key: String, value: String) -> R<()> {
+    checked_plugin_id(&plugin_id)?;
+    let c = conn()?;
+    core::plugin_service::kv_set(&c, &plugin_id, &key, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn plugin_kv_delete(plugin_id: String, key: String) -> R<bool> {
+    checked_plugin_id(&plugin_id)?;
+    let c = conn()?;
+    core::plugin_service::kv_delete(&c, &plugin_id, &key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn plugin_kv_list(
+    plugin_id: String,
+    key_prefix: Option<String>,
+) -> R<Vec<core::plugin_service::PluginKvEntry>> {
+    checked_plugin_id(&plugin_id)?;
+    let c = conn()?;
+    core::plugin_service::kv_list(&c, &plugin_id, key_prefix.as_deref()).map_err(|e| e.to_string())
+}
+
+/// 插件 HTTP 代理：校验 manifest 网络白名单 → 后台线程请求 → 全量审计。
+/// v1 仅 GET；返回 { status, text, json }（json 为可解析时的结构化结果）。
+#[tauri::command]
+async fn plugin_http_fetch(plugin_id: String, url: String) -> R<serde_json::Value> {
+    checked_plugin_id(&plugin_id)?;
+    let dir = core::plugin_manifest::plugins_root().join(&plugin_id);
+    let manifest = core::plugin_manifest::load_from_dir(&dir).map_err(|e| e.to_string())?;
+    core::plugin_manifest::check_network_allowed(&manifest.permissions.network, &url)
+        .map_err(|e| e.to_string())?;
+
+    let url_owned = url.clone();
+    let (status, text) =
+        tauri::async_runtime::spawn_blocking(move || -> Result<(u16, String), String> {
+            let resp = ureq::get(&url_owned)
+                .timeout(std::time::Duration::from_secs(15))
+                .call()
+                .map_err(|e| e.to_string())?;
+            let status = resp.status();
+            let text = resp.into_string().map_err(|e| e.to_string())?;
+            Ok((status, text))
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
+    let json = serde_json::from_str::<serde_json::Value>(&text).ok();
+    {
+        let c = conn()?;
+        core::log_activity(
+            &c,
+            chrono::Utc::now(),
+            Actor::Plugin(plugin_id.clone()),
+            "plugin.http_fetch",
+            "plugin",
+            Some(&plugin_id),
+            &serde_json::json!({ "url": url, "status": status }),
+        );
+    }
+    Ok(serde_json::json!({ "status": status, "text": text, "json": json }))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -203,7 +324,16 @@ pub fn run() {
             inbox_to_task,
             inbox_to_note,
             delete_inbox_item,
-            search_all
+            search_all,
+            plugin_list,
+            plugin_read_manifest,
+            plugin_set_enabled,
+            plugin_load_source,
+            plugin_kv_get,
+            plugin_kv_set,
+            plugin_kv_delete,
+            plugin_kv_list,
+            plugin_http_fetch
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
