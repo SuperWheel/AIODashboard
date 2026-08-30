@@ -5,6 +5,37 @@
 
 ---
 
+## [2026-08-30] UI 重设计：Bento 总控台 + 跟随系统双主题（切片 1–5 全部完成）
+
+**需求简述**：按用户拍板的定稿（`docs/ui-redesign-2026-08.md`）重做面板 UI——风格 C（Bento 总控台）、布局（首页网格 + 子页单列）、跟随系统双主题、首页四项重点（今日任务为主 / 插件卡片舞台 / 快速捕捉 / 统计可视化）。
+
+**模式**：Plan（设计定稿经用户四问确认后按 5 切片实施）
+
+**关键决策**：
+- **语义 token 而非 dark: 变体**：`@theme inline` 把 `--color-bg/surface/ink/accent…` 映射到运行时 CSS 变量，双主题 = 变量翻转（浅色 `:root` 默认 / `[data-theme="dark"]` / 系统深色媒体查询三选择器）。组件零 `dark:` 前缀，插件 UI 天然跟着换主题——这是「插件只用语义类名」规范成立的基础。
+- **主题三态**（system/light/dark）存 localStorage，index.html 内联脚本首帧前还原；system 态不设属性、交给媒体查询，原生控件配色由根 `color-scheme` 统一驱动（替掉日期输入框上的 `[color-scheme:dark]` 补丁）。
+- **插件协议新增 `registerTodayCard` 的 `size`**（sm=3列/md=4列/lg=6列，缺省 md）：bridge 运行时校验、registry 透传、App 包网格占位；向后兼容（可选字段），示例插件 echo/pomodoro 已声明 sm。PLUGIN_API.md 同步「UI 与双主题」一节。
+- **今日任务为主卡**（span 8，逾期任务红色横带置顶分组）；QuickCapture 独立成卡（今天任务/收件箱双去向，Enter 即走）；统计降为 2×2 迷你卡；问候卡带 SVG 完成率环（ProgressRing）。
+- 环比昨日箭头：StatCard 留了 delta 口径但**未接线**——`context today` 没有昨日数据，属于 core 层新增字段，后续单独切片。
+- 新增依赖 lucide-react（仅 Sidebar 核心视图用；插件视图仍用 manifest 字符图标，协议不变）。
+- 顺修：QuickCapture/番茄钟的"今天"改用本地时区（原 `toISOString().slice(0,10)` 跨午夜偏一天），新增 `hooks.localToday()`。
+
+**变更文件**：
+- `apps/desktop/src/styles.css` — token 体系 + 双主题 + focus-visible + reduced-motion
+- `apps/desktop/src/theme.ts`、`index.html` — 主题三态 hook + 防闪烁
+- `apps/desktop/src/components/` — ui.tsx 重构（Button/PageHeader/ProgressRing/Empty/Card hoverable）、QuickCapture 新组件、TodayView Bento 重写、五个子页 + Sidebar/SearchPalette/审批弹窗全量 token 化
+- `apps/desktop/src/plugins/{registry,bridge}.ts` — CardSize + size 透传校验；bridge.test.ts 补 size 用例
+- `examples/plugins/` — echo/pomodoro token 化 + size: "sm"
+- `docs/PLUGIN_API.md` — size + 双主题规范；`docs/ui-redesign-2026-08.md` — 设计定稿
+
+**验证结果**：
+- ✅ `bash scripts/check.sh` 全绿（fmt/clippy/Rust 测试/构建 + vitest 22 通过 + 前端生产构建）
+- ⚠️ 双主题人工走查（浅色下各视图/弹窗/插件卡片的实际观感）待用户在真机确认
+
+**下一步**：真机走查双主题；`context today` 补昨日数据后接 StatCard delta；三栏式任务详情（范围外，单独立项）。
+
+---
+
 ## [2026-08-30] 插件系统 P3（plugin-system/v1 切片 8–9）——P1~P3 全部完成
 
 **需求简述**：cron 全链路（Rust 驱动）、首次发现权限确认 UI、加载看门狗、插件重载、`plugin new/dev` 脚手架、PLUGIN_API.md 开发者文档。
