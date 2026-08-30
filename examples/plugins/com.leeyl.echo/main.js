@@ -16,14 +16,15 @@ export async function onload(api) {
   api.ui.registerTodayCard({
     id: "echo-card",
     title: "Echo",
+    size: "sm",
     component: (props) =>
       h(
         "div",
-        { className: "rounded-xl border border-white/10 bg-[#161a22] px-4 py-3" },
-        h("div", { className: "text-xs font-medium text-emerald-300" }, "Echo 插件运行中"),
+        { className: "rounded-2xl border border-line bg-surface shadow-card h-full px-4 py-3" },
+        h("div", { className: "text-xs font-medium text-accent" }, "Echo 插件运行中"),
         h(
           "div",
-          { className: "mt-1 text-xs text-slate-400" },
+          { className: "mt-1 text-xs text-ink2" },
           `第 ${loads} 次加载 · 今天是 ${props.today?.date ?? "?"}`,
         ),
       ),

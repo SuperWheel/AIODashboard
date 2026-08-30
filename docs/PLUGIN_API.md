@@ -89,7 +89,7 @@ export async function onunload() {
 | `api.events.on(topic, fn)` | 事件 | 返回取消函数；handler 抛错不影响宿主 |
 | `api.events.emit(topic, payload)` | 事件 | 插件间/自身广播（自定义 topic 无需声明） |
 | `api.registerCron(expr, fn)` | 调度 | expr 需在 manifest 声明；到点由 Rust 事件驱动 |
-| `api.ui.registerTodayCard({id,title,component})` | UI | Today 页卡片 |
+| `api.ui.registerTodayCard({id,title,size?,component})` | UI | Today 页 Bento 卡片；`size` = `"sm"`(3列) / `"md"`(默认, 4列) / `"lg"`(6列) |
 | `api.ui.registerView({id,title,icon?,component})` | UI | 侧边栏独立视图 |
 | `api.ui.registerCommand({id,title,handler})` | UI | ⌘K 面板命令 |
 | `api.log.info/warn/error(msg)` | 日志 | 前缀 `[<plugin_id>]` |
@@ -97,6 +97,16 @@ export async function onunload() {
 写操作自动以 `actor=plugin:<id>` 记审计，`dashboard activity --limit 50` 可查。
 
 **UI 组件签名**：卡片 `({ api, onChanged, today }) => ReactNode`；视图 `({ api, onChanged, onNav, refreshKey, today }) => ReactNode`。
+
+**UI 与双主题（必须遵守）**：面板是浅色/深色双主题，插件 UI 只允许使用语义 token 类名，
+禁止写死色值（如 `bg-[#161a22]`、`text-slate-400`、`text-white`、内联 hex）：
+
+- 容器：`rounded-2xl border border-line bg-surface shadow-card`（卡片根节点加 `h-full` 填满 Bento 格位）
+- 文字：`text-ink`（主）/ `text-ink2`（次）/ `text-ink3`（弱、占位）
+- 强调：`text-accent`、`bg-accent text-onaccent`（主按钮）、`bg-hover`（hover/弱底色）
+- 状态：`text-danger` / `text-warn` / `text-info` / `text-violet`
+
+写死的色值在另一个主题下会不可读；宿主不兜底。示例见 `examples/plugins/`。
 
 ## 5. 推荐模式（重要）
 

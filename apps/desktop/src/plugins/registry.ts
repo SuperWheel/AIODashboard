@@ -35,7 +35,11 @@ export interface RegisteredCard {
   id: string;
   title: string;
   component: ComponentType<PluginCardProps>;
+  /** Bento 网格占位：sm=3 列 / md=4 列 / lg=6 列（Today 页 12 列网格，缺省按 md） */
+  size?: CardSize;
 }
+
+export type CardSize = "sm" | "md" | "lg";
 
 export interface RegisteredCommand {
   owner: string;

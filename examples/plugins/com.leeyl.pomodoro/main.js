@@ -11,7 +11,11 @@ export async function onload(api) {
   const h = api.react.createElement;
 
   const get = async (k, dflt = null) => (await api.storage.kv.get(k)) ?? dflt;
-  const todayKey = () => `count:${new Date().toISOString().slice(0, 10)}`;
+  const pad = (n) => String(n).padStart(2, "0");
+  const todayKey = () => {
+    const d = new Date();
+    return `count:${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
 
   async function isRunning() {
     const ends = await api.storage.kv.get("ends_at");
@@ -94,7 +98,7 @@ export async function onload(api) {
         onClick: () => {
           Promise.resolve(props.onClick()).then(props.after);
         },
-        className: `rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${props.cls ?? "bg-white/5 text-slate-300 hover:bg-white/10"}`,
+        className: `rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${props.cls ?? "bg-hover text-ink2 hover:text-ink"}`,
       },
       props.label,
     );
@@ -110,7 +114,7 @@ export async function onload(api) {
             label: "开始专注",
             onClick: start,
             after: props.refresh,
-            cls: "bg-emerald-500/90 text-[#0f1115] hover:bg-emerald-400",
+            cls: "bg-accent text-onaccent hover:bg-accent/90",
           }),
     );
 
@@ -118,6 +122,7 @@ export async function onload(api) {
   api.ui.registerTodayCard({
     id: "card",
     title: "番茄钟",
+    size: "sm",
     component: (props) => {
       const st = usePomodoro();
       const [todayCount, setTodayCount] = api.react.useState("-");
@@ -126,16 +131,16 @@ export async function onload(api) {
       }, [st.expired, props.today?.date]);
       return h(
         "div",
-        { className: "rounded-xl border border-white/10 bg-[#161a22] px-4 py-3" },
+        { className: "rounded-2xl border border-line bg-surface shadow-card h-full px-4 py-3" },
         h(
           "div",
           { className: "flex items-center justify-between" },
-          h("div", { className: "text-xs font-medium text-emerald-300" }, "番茄钟"),
-          h("div", { className: "text-[10px] text-slate-500" }, `今日完成 ${todayCount}`),
+          h("div", { className: "text-xs font-medium text-accent" }, "番茄钟"),
+          h("div", { className: "text-[10px] text-ink3" }, `今日完成 ${todayCount}`),
         ),
         h(
           "div",
-          { className: "mt-1 font-mono text-2xl tabular-nums", style: { color: st.running ? "#e2e8f0" : "#475569" } },
+          { className: `mt-1 font-mono text-2xl tabular-nums ${st.running ? "text-ink" : "text-ink3"}` },
           st.running ? (st.expired ? "完成！" : fmt(st.remaining)) : "25:00",
         ),
         h(Controls, { running: st.running, refresh: props.onChanged }),
@@ -165,23 +170,22 @@ export async function onload(api) {
         h(
           "div",
           { className: "flex items-baseline justify-between" },
-          h("h1", { className: "text-xl font-semibold text-white" }, "番茄钟"),
-          h("span", { className: "text-xs text-slate-500" }, "完成一个任务会自动开始专注"),
+          h("h1", { className: "text-xl font-semibold text-ink" }, "番茄钟"),
+          h("span", { className: "text-xs text-ink3" }, "完成一个任务会自动开始专注"),
         ),
         h(
           "div",
-          { className: "mt-8 flex flex-col items-center rounded-2xl border border-white/10 bg-[#161a22] py-10" },
+          { className: "mt-8 flex flex-col items-center rounded-2xl border border-line bg-surface shadow-card py-10" },
           h(
             "div",
             {
-              className: "font-mono text-6xl tabular-nums",
-              style: { color: st.running ? "#34d399" : "#475569" },
+              className: `font-mono text-6xl tabular-nums ${st.running ? "text-accent" : "text-ink3"}`,
             },
             st.running ? (st.expired ? "完成！" : fmt(st.remaining)) : "25:00",
           ),
           h(
             "div",
-            { className: "mt-2 text-xs text-slate-500" },
+            { className: "mt-2 text-xs text-ink3" },
             st.running ? "专注中…" : "空闲",
           ),
           h(Controls, { running: st.running, refresh: props.onChanged }),
@@ -191,15 +195,15 @@ export async function onload(api) {
           { className: "mt-4 grid grid-cols-2 gap-3 text-center" },
           h(
             "div",
-            { className: "rounded-xl border border-white/10 bg-[#161a22] px-4 py-3" },
-            h("div", { className: "text-2xl font-semibold text-white" }, todayCount),
-            h("div", { className: "mt-0.5 text-[11px] text-slate-500" }, "今日完成"),
+            { className: "rounded-2xl border border-line bg-surface shadow-card h-full px-4 py-3" },
+            h("div", { className: "text-2xl font-semibold tabular-nums text-ink" }, todayCount),
+            h("div", { className: "mt-0.5 text-[11px] text-ink3" }, "今日完成"),
           ),
           h(
             "div",
-            { className: "rounded-xl border border-white/10 bg-[#161a22] px-4 py-3" },
-            h("div", { className: "text-2xl font-semibold text-white" }, total),
-            h("div", { className: "mt-0.5 text-[11px] text-slate-500" }, "累计完成"),
+            { className: "rounded-2xl border border-line bg-surface shadow-card h-full px-4 py-3" },
+            h("div", { className: "text-2xl font-semibold tabular-nums text-ink" }, total),
+            h("div", { className: "mt-0.5 text-[11px] text-ink3" }, "累计完成"),
           ),
         ),
       );

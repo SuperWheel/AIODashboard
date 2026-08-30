@@ -229,9 +229,14 @@ export default function App() {
     };
   }, []);
 
-  // 插件卡片槽位（Today 视图消费）
+  // 插件卡片槽位（Today 视图消费）：按 size 包一层 Bento 网格占位（12 列）
   void pluginsVersion;
   const apiById = new Map(pluginsRef.current.map((p) => [p.id, p.api]));
+  const CARD_SPAN: Record<string, string> = {
+    sm: "lg:col-span-3",
+    md: "lg:col-span-4",
+    lg: "lg:col-span-6",
+  };
   const cardsNode = registry.cards.length > 0 && (
     <>
       {registry.cards.map((c) => {
@@ -240,13 +245,19 @@ export default function App() {
           onChanged: bump,
           today,
         };
-        return <c.component key={c.id} {...props} />;
+        return (
+          <div key={c.id} className={CARD_SPAN[c.size ?? "md"]}>
+            <c.component {...props} />
+          </div>
+        );
       })}
     </>
   );
 
   const activeView =
     registry.views.find((v) => v.key === view) ?? registry.views[0];
+  // Today（Bento 总控台）与插件视图用宽容器；列表类子页保持单列工作室
+  const wide = activeView.key === "today" || activeView.owner !== "core";
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg">
@@ -257,7 +268,7 @@ export default function App() {
         inboxOpen={today?.open_inbox_count ?? 0}
       />
       <main className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="mx-auto max-w-3xl">
+        <div className={`mx-auto ${wide ? "max-w-6xl" : "max-w-3xl"}`}>
           <activeView.component
             today={today}
             onChanged={bump}

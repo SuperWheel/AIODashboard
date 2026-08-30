@@ -49,6 +49,8 @@ export interface PluginApi {
     registerTodayCard: (card: {
       id: string;
       title: string;
+      /** Bento 占位：sm/md/lg（缺省 md）；非法值视为插件错误 */
+      size?: import("./registry").CardSize;
       component: React.ComponentType<import("./registry").PluginCardProps>;
     }) => void;
     registerView: (view: {
@@ -136,11 +138,15 @@ export function createPluginApi(
 
     ui: {
       registerTodayCard: (card) => {
+        if (card.size !== undefined && !["sm", "md", "lg"].includes(card.size)) {
+          throw new Error(`卡片 size 非法: '${card.size}'（可选 "sm" | "md" | "lg"）`);
+        }
         deps.registry.registerCard({
           owner: pluginId,
           id: `${pluginId}.${card.id}`,
           title: card.title,
           component: card.component,
+          size: card.size,
         });
         deps.onChanged();
       },

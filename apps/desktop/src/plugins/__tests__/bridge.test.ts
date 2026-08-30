@@ -103,6 +103,27 @@ describe("API 桥权限执行", () => {
     ).toThrow(/冲突/);
   });
 
+  it("Today 卡片 size 透传进 registry；非法 size 拒绝注册", () => {
+    const deps = makeDeps();
+    const apiObj = createPluginApi("com.test.echo", manifest({}), deps);
+
+    const FakeComponent = () => null;
+    apiObj.ui.registerTodayCard({ id: "a", title: "A", size: "sm", component: FakeComponent });
+    apiObj.ui.registerTodayCard({ id: "b", title: "B", component: FakeComponent });
+    expect(deps.registry.cards.map((c) => c.size)).toEqual(["sm", undefined]);
+
+    expect(() =>
+      apiObj.ui.registerTodayCard({
+        id: "c",
+        title: "C",
+        // @ts-expect-error 运行时校验：绕过类型声明的非法值
+        size: "xl",
+        component: FakeComponent,
+      }),
+    ).toThrow(/size 非法/);
+    expect(deps.registry.cards.map((c) => c.id)).not.toContain("com.test.echo.c");
+  });
+
   it("registerCron 需要 manifest 声明该表达式；声明后进入 cron 注册表", () => {
     const deps = makeDeps();
     const apiObj = createPluginApi(
