@@ -3,13 +3,17 @@ import { api } from "../api";
 import { usePolling } from "../hooks";
 import type { Note } from "../types";
 import { Button, Empty, PageHeader } from "./ui";
+import { confirmDialog, toastError } from "./DialogHost";
 
 export default function NotesView({
   refreshKey,
   onChanged,
+  navParam,
 }: {
   refreshKey: number;
   onChanged: () => void;
+  /** 跨视图导航参数：Today 页点击笔记条目时传入笔记 id */
+  navParam?: string;
 }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -29,6 +33,14 @@ export default function NotesView({
   usePolling(load, 5000, [refreshKey]);
 
   const selected = notes.find((n) => n.id === selectedId) ?? null;
+
+  // Today 页「最近笔记」跳转：定位到该条（有未保存修改时不打断用户）
+  useEffect(() => {
+    if (navParam && !dirty && notes.some((n) => n.id === navParam)) {
+      setSelectedId(navParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navParam, notes]);
 
   useEffect(() => {
     if (selected && !dirty) {
@@ -51,7 +63,7 @@ export default function NotesView({
       setDirty(false);
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     }
   };
 
@@ -62,7 +74,7 @@ export default function NotesView({
       setDirty(false);
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     }
   };
 
@@ -73,19 +85,19 @@ export default function NotesView({
       setSelectedId(n.id);
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     }
   };
 
   const remove = async () => {
-    if (!selected || !confirm(`删除笔记「${selected.title || "(无标题)"}」？`)) return;
+    if (!selected || !(await confirmDialog("删除笔记", `「${selected.title || "(无标题)"}」删除后不可恢复`))) return;
     try {
       await api.deleteNote(selected.id);
       setSelectedId(null);
       setDirty(false);
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     }
   };
 

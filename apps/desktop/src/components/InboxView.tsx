@@ -3,6 +3,7 @@ import { api } from "../api";
 import { usePolling, fmtDateTime } from "../hooks";
 import type { InboxItem } from "../types";
 import { Badge, Button, Card, Empty, PageHeader, SectionTitle } from "./ui";
+import { confirmDialog, toastError } from "./DialogHost";
 
 export default function InboxView({
   refreshKey,
@@ -29,7 +30,7 @@ export default function InboxView({
       setContent("");
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     } finally {
       setBusy(false);
     }
@@ -40,7 +41,7 @@ export default function InboxView({
       await fn();
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     }
   };
 
@@ -117,7 +118,7 @@ export default function InboxView({
                 <Badge tone="green">已处理 · 来自 {i.source}</Badge>
               )}
               <button
-                onClick={() => confirm("删除该条目？") && act(() => api.deleteInboxItem(i.id))}
+                onClick={async () => (await confirmDialog("删除该条目？", i.content)) && act(() => api.deleteInboxItem(i.id))}
                 className="invisible shrink-0 text-ink3 transition-colors hover:text-danger group-hover:visible"
               >
                 ×

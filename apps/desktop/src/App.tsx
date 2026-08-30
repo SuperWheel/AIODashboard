@@ -13,6 +13,7 @@ import SearchPalette from "./components/SearchPalette";
 import PluginsView from "./components/PluginsView";
 import PluginApprovalModal from "./components/PluginApprovalModal";
 import PluginErrorBoundary from "./components/PluginErrorBoundary";
+import DialogHost, { toastError } from "./components/DialogHost";
 import { EventBus } from "./plugins/events";
 import { CronRegistry } from "./plugins/crons";
 import { ModuleRegistry, type PluginCardProps } from "./plugins/registry";
@@ -21,6 +22,8 @@ import type { PluginInfo } from "./plugins/types";
 
 export default function App() {
   const [view, setView] = useState<string>("today");
+  // 跨视图导航参数（如 tasks 的 tab、notes 的笔记 id）
+  const [navParam, setNavParam] = useState<string | undefined>(undefined);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [today, setToday] = useState<TodayContext | null>(null);
   // refreshKey 变化时所有视图立即重新拉取（本地变更后同步 UI）
@@ -50,7 +53,9 @@ export default function App() {
       key: "tasks",
       title: "任务",
       icon: "☑",
-      component: (p) => <TasksView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+      component: (p) => (
+        <TasksView refreshKey={p.refreshKey} onChanged={p.onChanged} navParam={p.navParam} />
+      ),
     });
     registry.registerView({
       owner: "core",
@@ -64,7 +69,9 @@ export default function App() {
       key: "notes",
       title: "笔记",
       icon: "✎",
-      component: (p) => <NotesView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+      component: (p) => (
+        <NotesView refreshKey={p.refreshKey} onChanged={p.onChanged} navParam={p.navParam} />
+      ),
     });
     registry.registerView({
       owner: "core",
@@ -101,6 +108,11 @@ export default function App() {
   const bump = () => {
     eventsRef.current?.emit("panel.refresh", null);
     setRefreshKey((k) => k + 1);
+  };
+
+  const nav = (v: string, param?: string) => {
+    setNavParam(param);
+    setView(v);
   };
 
   const loadToday = () => api.getToday().then(setToday).catch(console.error);
@@ -267,7 +279,7 @@ export default function App() {
       <Sidebar
         items={registry.views.map((v) => ({ key: v.key, label: v.title, icon: v.icon }))}
         current={activeView.key}
-        onNav={setView}
+        onNav={nav}
         inboxOpen={today?.open_inbox_count ?? 0}
       />
       <main className="flex-1 overflow-y-auto px-8 py-6">
@@ -276,7 +288,8 @@ export default function App() {
             <activeView.component
               today={today}
               onChanged={bump}
-              onNav={setView}
+              onNav={nav}
+              navParam={navParam}
               refreshKey={refreshKey}
               cards={cardsNode ?? undefined}
             />
@@ -286,7 +299,8 @@ export default function App() {
               <activeView.component
                 today={today}
                 onChanged={bump}
-                onNav={setView}
+                onNav={nav}
+                navParam={navParam}
                 refreshKey={refreshKey}
                 cards={cardsNode ?? undefined}
               />
@@ -303,6 +317,7 @@ export default function App() {
           onDismiss={dismissPlugin}
         />
       )}
+      <DialogHost />
       <SearchPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -313,13 +328,13 @@ export default function App() {
             note: "notes",
             inbox: "inbox",
           };
-          setView(map[kind] ?? "today");
+          nav(map[kind] ?? "today");
           setPaletteOpen(false);
         }}
         commands={registry.commands}
         onRunCommand={(cmd) => {
           void Promise.resolve(cmd.handler())
-            .catch((e) => alert(`命令执行失败: ${String(e)}`))
+            .catch((e) => toastError(`命令执行失败: ${String(e)}`))
             .finally(() => {
               bump();
               setPaletteOpen(false);

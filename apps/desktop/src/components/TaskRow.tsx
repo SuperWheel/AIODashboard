@@ -2,6 +2,7 @@ import { api } from "../api";
 import { fmtDateTime, isOverdue } from "../hooks";
 import type { Task } from "../types";
 import { Badge } from "./ui";
+import { confirmDialog, toastError } from "./DialogHost";
 
 export default function TaskRow({
   task,
@@ -18,17 +19,17 @@ export default function TaskRow({
       await api.setTaskStatus(task.id, done ? "todo" : "done");
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     }
   };
 
   const remove = async () => {
-    if (!confirm(`删除任务「${task.title}」？`)) return;
+    if (!(await confirmDialog("删除任务", `「${task.title}」删除后不可恢复`))) return;
     try {
       await api.deleteTask(task.id);
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     }
   };
 

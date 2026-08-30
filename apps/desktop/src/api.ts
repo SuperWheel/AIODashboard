@@ -63,6 +63,12 @@ export const api = {
   createProject: (name: string, description: string) =>
     invoke<Project>("create_project", { name, description: description ?? "" }),
   archiveProject: (id: string) => invoke<void>("archive_project", { id }),
+  updateProject: (id: string, name?: string, description?: string) =>
+    invoke<Project>("update_project", {
+      id,
+      name: name ?? null,
+      description: description ?? null,
+    }),
   deleteProject: (id: string) => invoke<void>("delete_project", { id }),
 
   // Notes

@@ -7,8 +7,11 @@ import type { TodayContext } from "../types";
 export interface PluginViewProps {
   today: TodayContext | null;
   onChanged: () => void;
-  onNav: (v: string) => void;
+  /** 跳转视图；param 为视图自定义参数（如 tasks 的 tab、notes 的笔记 id） */
+  onNav: (v: string, param?: string) => void;
   refreshKey: number;
+  /** 本次跳转携带的视图参数（随 onNav 的 param 而来） */
+  navParam?: string;
   /** 仅 Today 视图消费：插件卡片槽位 */
   cards?: ReactNode;
 }

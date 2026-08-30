@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { localToday } from "../hooks";
+import { toastError } from "./DialogHost";
 
 type Target = "today" | "inbox";
 
@@ -37,7 +38,7 @@ export default function QuickCapture({
       setText("");
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     } finally {
       setBusy(false);
     }

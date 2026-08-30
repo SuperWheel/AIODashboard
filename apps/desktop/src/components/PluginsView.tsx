@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { PluginInfo, PluginManifest } from "../plugins/types";
 import { Badge, Button, Card, Empty, PageHeader, SectionTitle } from "./ui";
+import { toastError } from "./DialogHost";
 
 const PERM_LABELS: { key: keyof NonNullable<PluginManifest["permissions"]>; label: string }[] = [
   { key: "network", label: "网络" },
@@ -52,7 +53,7 @@ export default function PluginsView({
       window.dispatchEvent(new CustomEvent("reload-plugins"));
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     } finally {
       setBusy(null);
     }

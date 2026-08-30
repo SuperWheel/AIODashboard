@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
-import { usePolling } from "../hooks";
+import { localToday, usePolling } from "../hooks";
 import type { Task } from "../types";
 import TaskRow from "./TaskRow";
 import { Button, Card, Empty, PageHeader, SectionTitle } from "./ui";
+import { toastError } from "./DialogHost";
 
 type Tab = "open" | "today" | "overdue" | "done" | "all";
 
@@ -18,15 +19,23 @@ const TABS: { key: Tab; label: string }[] = [
 export default function TasksView({
   refreshKey,
   onChanged,
+  navParam,
 }: {
   refreshKey: number;
   onChanged: () => void;
+  /** 跨视图导航参数：Today 统计卡跳转时指定 tab */
+  navParam?: string;
 }) {
   const [tab, setTab] = useState<Tab>("open");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
-  const [due, setDue] = useState("");
+  // 默认今天到期：让「新建的任务」立即可见于 Today 页（清空日期则不排期）
+  const [due, setDue] = useState(localToday());
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (navParam && TABS.some((t) => t.key === navParam)) setTab(navParam as Tab);
+  }, [navParam]);
 
   const load = () => api.listTasks(tab).then(setTasks).catch(console.error);
   usePolling(load, 4000, [tab, refreshKey]);
@@ -38,10 +47,10 @@ export default function TasksView({
     try {
       await api.createTask(t, due || undefined);
       setTitle("");
-      setDue("");
+      setDue(localToday());
       onChanged();
     } catch (e) {
-      alert(String(e));
+      toastError(String(e));
     } finally {
       setBusy(false);
     }
@@ -69,6 +78,7 @@ export default function TasksView({
           添加
         </Button>
       </div>
+      <p className="mt-1.5 text-[11px] text-ink3">默认今天到期；清空日期则不排期（不出现在「今天」页）</p>
 
       <SectionTitle>
         <div className="flex gap-1">

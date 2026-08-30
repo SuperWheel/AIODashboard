@@ -17,7 +17,7 @@ export default function TodayView({
 }: {
   data: TodayContext | null;
   onChanged: () => void;
-  onNav: (v: string) => void;
+  onNav: (v: string, param?: string) => void;
   /** 插件卡片槽位（ModuleRegistry 注入，已按 size 包好网格占位） */
   extraCards?: ReactNode;
 }) {
@@ -55,9 +55,9 @@ export default function TodayView({
 
       {/* 统计 2×2 迷你卡 */}
       <div className="grid grid-cols-2 gap-3 lg:col-span-4">
-        <StatCard label="今日待办" value={data ? total : "-"} tone="blue" onClick={() => onNav("tasks")} />
-        <StatCard label="已完成" value={data ? done : "-"} tone="green" onClick={() => onNav("tasks")} />
-        <StatCard label="已逾期" value={data ? overdue : "-"} tone="red" onClick={() => onNav("tasks")} />
+        <StatCard label="今日待办" value={data ? total : "-"} tone="blue" onClick={() => onNav("tasks", "today")} />
+        <StatCard label="已完成" value={data ? done : "-"} tone="green" onClick={() => onNav("tasks", "done")} />
+        <StatCard label="已逾期" value={data ? overdue : "-"} tone="red" onClick={() => onNav("tasks", "overdue")} />
         <StatCard label="收件箱" value={data ? inbox : "-"} tone="violet" onClick={() => onNav("inbox")} />
       </div>
 
@@ -110,7 +110,7 @@ export default function TodayView({
                 {data.recent_notes.map((n) => (
                   <li key={n.id}>
                     <button
-                      onClick={() => onNav("notes")}
+                      onClick={() => onNav("notes", n.id)}
                       className="w-full truncate rounded-md px-1.5 py-1 text-left text-xs text-ink2 transition-colors hover:bg-hover hover:text-ink"
                     >
                       · {n.title || "(无标题)"}
