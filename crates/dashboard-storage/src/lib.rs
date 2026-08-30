@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS widget_snapshots (
 COMMIT;
 "#;
 
-/// V2（plugin-system/v1）：插件注册表与插件命名空间 KV。
+/// V2（plugin-system/v1）：插件注册表与插件命名空间 KV；
+/// 同时重建 activity_log 放开 actor CHECK（允许 `plugin:<id>`，旧数据原样保留）。
 const SCHEMA_V2: &str = r#"
 BEGIN;
 
@@ -146,6 +147,20 @@ CREATE TABLE IF NOT EXISTS plugin_kv (
     PRIMARY KEY (plugin_id, key)
 );
 CREATE INDEX IF NOT EXISTS idx_plugin_kv_plugin ON plugin_kv(plugin_id);
+
+CREATE TABLE IF NOT EXISTS activity_log_v2 (
+    id          TEXT PRIMARY KEY,
+    ts          TEXT NOT NULL,
+    actor       TEXT NOT NULL CHECK (actor IN ('user','cli','ai','automation','system') OR actor LIKE 'plugin:%'),
+    action      TEXT NOT NULL,
+    object_type TEXT NOT NULL,
+    object_id   TEXT,
+    detail      TEXT NOT NULL DEFAULT '{}'
+);
+INSERT INTO activity_log_v2 (id, ts, actor, action, object_type, object_id, detail)
+    SELECT id, ts, actor, action, object_type, object_id, detail FROM activity_log;
+DROP TABLE activity_log;
+ALTER TABLE activity_log_v2 RENAME TO activity_log;
 
 COMMIT;
 "#;

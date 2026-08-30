@@ -16,6 +16,7 @@ struct Env {
     _dir: TempDir,
     db_path: PathBuf,
     snap_path: PathBuf,
+    plugins_dir: PathBuf,
 }
 
 impl Env {
@@ -23,10 +24,12 @@ impl Env {
         let dir = TempDir::new().expect("tempdir");
         let db_path = dir.path().join("dashboard.db");
         let snap_path = dir.path().join("widget-snapshot.json");
+        let plugins_dir = dir.path().join("plugins");
         Self {
             _dir: dir,
             db_path,
             snap_path,
+            plugins_dir,
         }
     }
 
@@ -35,12 +38,21 @@ impl Env {
             .args(args)
             .env("DASHBOARD_DB_PATH", &self.db_path)
             .env("DASHBOARD_WIDGET_SNAPSHOT_PATH", &self.snap_path)
+            .env("DASHBOARD_PLUGINS_DIR", &self.plugins_dir)
             .output()
             .expect("run cli");
         (
             out.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&out.stdout).to_string(),
         )
+    }
+
+    /// 在测试插件目录里写一个插件（manifest.json + main.js）。
+    fn write_plugin(&self, dir_name: &str, manifest_json: &str, entry_js: &str) {
+        let p = self.plugins_dir.join(dir_name);
+        std::fs::create_dir_all(&p).unwrap();
+        std::fs::write(p.join("manifest.json"), manifest_json).unwrap();
+        std::fs::write(p.join("main.js"), entry_js).unwrap();
     }
 
     /// 模拟 GUI / AI 直接调用 Core（与 Tauri Command 完全相同的代码路径）。
@@ -159,4 +171,104 @@ fn dry_run_reports_without_deleting() {
 
     let conn = env.core_conn();
     assert!(dashboard_core::task_service::get_task(&conn, &task.id).is_ok());
+}
+
+// ---------------- 插件链路（plugin-system/v1）----------------
+
+/// T4：list 展示磁盘新发现插件（enabled=null）→ enable 自动登记 → disable → 审计齐全。
+#[test]
+fn plugin_list_enable_disable_roundtrip() {
+    let env = Env::new();
+    env.write_plugin(
+        "com.test.echo",
+        r#"{"id":"com.test.echo","name":"Echo","version":"0.1.0","entry":"main.js"}"#,
+        "export function onload() {}",
+    );
+
+    // 新发现：已列出但未注册
+    let (code, out) = env.cli(&["plugin", "list", "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["success"], true);
+    let items = v["data"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["id"], "com.test.echo");
+    assert!(items[0]["enabled"].is_null());
+
+    // enable：未注册但磁盘合法 → 自动登记并启用
+    let (code, out) = env.cli(&["plugin", "enable", "com.test.echo", "--json"]);
+    assert_eq!(code, 0, "{out}");
+
+    let (code, out) = env.cli(&["plugin", "list", "--json"]);
+    assert_eq!(code, 0);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"][0]["enabled"], true);
+
+    // disable
+    let (code, out) = env.cli(&["plugin", "disable", "com.test.echo", "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let conn = env.core_conn();
+    let reg = dashboard_core::plugin_service::get_registration(&conn, "com.test.echo").unwrap();
+    assert!(!reg.enabled);
+
+    // 审计：register / enable / disable 三条齐全
+    let (code, out) = env.cli(&["activity", "--json", "--limit", "50"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("plugin.registered"), "{out}");
+    assert!(out.contains("plugin.enable"), "{out}");
+    assert!(out.contains("plugin.disable"), "{out}");
+}
+
+/// T4：未知插件 id → exit 3 + not_found 信封。
+#[test]
+fn plugin_unknown_id_exit_code_3() {
+    let env = Env::new();
+    let (code, out) = env.cli(&["plugin", "disable", "com.missing.thing", "--json"]);
+    assert_eq!(code, 3, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["success"], false);
+    assert_eq!(v["error"]["code"], "not_found");
+    assert_eq!(v["meta"]["schema_version"], "1");
+}
+
+/// T4：manifest 非法的目录在 list 中以 error 呈现，不影响整体。
+#[test]
+fn plugin_list_reports_invalid_manifest() {
+    let env = Env::new();
+    env.write_plugin("com.test.bad", "{{broken", "// noop");
+
+    let (code, out) = env.cli(&["plugin", "list", "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let items = v["data"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert!(items[0]["error"].is_string());
+
+    // 非法 manifest 不能通过 enable 混进注册表
+    let (code, _) = env.cli(&["plugin", "enable", "com.test.bad", "--json"]);
+    assert_eq!(code, 2);
+}
+
+/// T4：插件以 Actor::Plugin 调用 core 时审计形态为 plugin:<id>。
+#[test]
+fn plugin_actor_recorded_in_activity() {
+    let env = Env::new();
+    let conn = env.core_conn();
+    let input = dashboard_core::task_service::CreateTaskInput {
+        title: "插件创建的任务".into(),
+        due_at: None,
+        project_id: None,
+    };
+    let task = dashboard_core::task_service::create_task(
+        &conn,
+        &input,
+        dashboard_domain::Actor::Plugin("com.test.echo".into()),
+    )
+    .unwrap();
+    drop(conn);
+
+    let (code, out) = env.cli(&["activity", "--json", "--limit", "10"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("plugin:com.test.echo"), "{out}");
+    assert_eq!(task.title, "插件创建的任务");
 }

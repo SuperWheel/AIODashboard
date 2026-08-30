@@ -15,7 +15,8 @@ use std::io::Read;
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 use dashboard_core::{
-    context_service, inbox_service, note_service, project_service, search_service, task_service,
+    context_service, inbox_service, note_service, plugin_manifest, plugin_service, project_service,
+    search_service, task_service,
 };
 use dashboard_core::{CoreError, CoreResult};
 use dashboard_domain::{Actor, TaskStatus};
@@ -60,6 +61,11 @@ enum Commands {
     Inbox {
         #[command(subcommand)]
         cmd: InboxCmd,
+    },
+    /// 插件管理
+    Plugin {
+        #[command(subcommand)]
+        cmd: PluginCmd,
     },
     /// 全局搜索（任务 / 项目 / 笔记 / 收件箱）
     Search { query: String },
@@ -218,6 +224,16 @@ enum ContextCmd {
     Today,
 }
 
+#[derive(Subcommand)]
+enum PluginCmd {
+    /// 列出插件（磁盘发现 ∪ 注册表状态）
+    List,
+    /// 启用插件（未注册但磁盘合法的插件会先登记）
+    Enable { id: String },
+    /// 停用插件
+    Disable { id: String },
+}
+
 /// 接口层输出：人类文本 + JSON 数据。
 struct Out {
     text: String,
@@ -291,6 +307,7 @@ fn dispatch(cmd: Commands) -> CoreResult<Out> {
             })
         }
         Commands::Context { cmd } => context_cmd(cmd),
+        Commands::Plugin { cmd } => plugin_cmd(cmd),
         Commands::Activity {
             actor: actor_filter,
             limit,
@@ -757,6 +774,73 @@ fn inbox_cmd(cmd: InboxCmd) -> CoreResult<Out> {
             Ok(Out {
                 text: format!("已删除 {id}"),
                 data: Value::Null,
+            })
+        }
+    }
+}
+
+// ---------------- Plugin ----------------
+
+fn plugin_cmd(cmd: PluginCmd) -> CoreResult<Out> {
+    match cmd {
+        PluginCmd::List => {
+            let conn = util::open_conn()?;
+            let plugins = plugin_service::list_installed(&conn, &plugin_manifest::plugins_root())?;
+            let mut text = String::new();
+            if plugins.is_empty() {
+                text.push_str("（未发现插件）");
+            } else {
+                text.push_str("ID                                   STATE         VERSION  NAME\n");
+                for p in &plugins {
+                    let state = if p.error.is_some() {
+                        "invalid".to_string()
+                    } else {
+                        match p.enabled {
+                            Some(true) => "enabled".to_string(),
+                            Some(false) => "disabled".to_string(),
+                            None => "new".to_string(),
+                        }
+                    };
+                    text.push_str(&format!(
+                        "{:<36}  {:<12}  {:<7}  {}\n",
+                        p.id,
+                        state,
+                        p.version,
+                        output::trunc(&p.name, 24)
+                    ));
+                }
+            }
+            Ok(Out {
+                text,
+                data: json!(plugins),
+            })
+        }
+        PluginCmd::Enable { id } => {
+            let conn = util::open_conn()?;
+            plugin_service::set_plugin_enabled(
+                &conn,
+                &plugin_manifest::plugins_root(),
+                &id,
+                true,
+                actor(),
+            )?;
+            Ok(Out {
+                text: format!("已启用插件 {id}"),
+                data: json!({ "id": id, "enabled": true }),
+            })
+        }
+        PluginCmd::Disable { id } => {
+            let conn = util::open_conn()?;
+            plugin_service::set_plugin_enabled(
+                &conn,
+                &plugin_manifest::plugins_root(),
+                &id,
+                false,
+                actor(),
+            )?;
+            Ok(Out {
+                text: format!("已停用插件 {id}"),
+                data: json!({ "id": id, "enabled": false }),
             })
         }
     }

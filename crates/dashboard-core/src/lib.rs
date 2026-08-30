@@ -6,6 +6,7 @@
 pub mod context_service;
 pub mod inbox_service;
 pub mod note_service;
+pub mod plugin_manifest;
 pub mod plugin_service;
 pub mod project_service;
 pub mod search_service;

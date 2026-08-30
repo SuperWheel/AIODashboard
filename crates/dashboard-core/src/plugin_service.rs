@@ -106,6 +106,87 @@ pub fn set_enabled(
     get_registration(conn, plugin_id)
 }
 
+/// 启停插件；未注册但磁盘上存在合法 manifest 的插件先登记（v1 无显式 install 步骤）。
+pub fn set_plugin_enabled(
+    conn: &rusqlite::Connection,
+    root: &std::path::Path,
+    plugin_id: &str,
+    enabled: bool,
+    actor: Actor,
+) -> CoreResult<PluginRegistration> {
+    if plugin_repo::get_registration(conn, plugin_id)?.is_none() {
+        let dir = root.join(plugin_id);
+        if !dir.is_dir() {
+            return Err(CoreError::NotFound(format!("plugin {plugin_id}")));
+        }
+        // 目录存在但 manifest 非法 → Validation 原样上抛
+        crate::plugin_manifest::load_from_dir(&dir)?;
+        ensure_registered(conn, plugin_id)?;
+    }
+    set_enabled(conn, plugin_id, enabled, actor)
+}
+
+/// CLI / GUI 列表用读模型：磁盘发现 ∪ 注册表。
+#[derive(Debug, Clone, Serialize)]
+pub struct PluginInfo {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    /// None = 磁盘上存在但尚未注册
+    pub enabled: Option<bool>,
+    pub dir: String,
+    /// manifest 缺失 / 非法 / 目录名不一致时的错误信息
+    pub error: Option<String>,
+}
+
+/// 列出全部已知插件：磁盘扫描结果 + 仅存在于注册表的残留项。
+pub fn list_installed(
+    conn: &rusqlite::Connection,
+    root: &std::path::Path,
+) -> CoreResult<Vec<PluginInfo>> {
+    let mut out: Vec<PluginInfo> = Vec::new();
+    for d in crate::plugin_manifest::scan_plugins_dir(root) {
+        let dir_name = d
+            .dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        match d.manifest {
+            Some(m) => out.push(PluginInfo {
+                enabled: plugin_repo::get_registration(conn, &m.id)?.map(|r| r.enabled),
+                id: m.id.clone(),
+                name: m.name.clone(),
+                version: m.version.clone(),
+                dir: d.dir.display().to_string(),
+                error: None,
+            }),
+            None => out.push(PluginInfo {
+                id: dir_name,
+                name: "-".into(),
+                version: "-".into(),
+                enabled: None,
+                dir: d.dir.display().to_string(),
+                error: d.error,
+            }),
+        }
+    }
+    for r in plugin_repo::list_registrations(conn)? {
+        if !out.iter().any(|p| p.id == r.id) {
+            out.push(PluginInfo {
+                id: r.id.clone(),
+                name: "(目录缺失)".into(),
+                version: "-".into(),
+                enabled: Some(r.enabled),
+                dir: root.join(&r.id).display().to_string(),
+                error: Some("插件目录不存在".into()),
+            });
+        }
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginKvEntry {
     pub key: String,
