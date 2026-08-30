@@ -36,3 +36,4 @@ openspec/
 |---|---|---|---|
 | [001-plugin-system](changes/001-plugin-system/proposal.md) | 插件系统（plugin-system/v1） | 已完成 | 2026-08-30 |
 | [002-ui-redesign-bento](changes/002-ui-redesign-bento/proposal.md) | UI 重设计 · Bento 总控台 | 已完成 | 2026-08-30 |
+| [003-task-checkin-cards](changes/003-task-checkin-cards/proposal.md) | 打卡式任务 + 日期主库 + 四种任务卡片 | 进行中 | — |
