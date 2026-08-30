@@ -1,7 +1,8 @@
-# Spec：插件系统 plugin-system/v1
+# Spec：插件系统（plugin-system/v1）
 
-> 状态：提案已确认（2026-08-30）· 模式：Spec · TDD：测试用例清单确认后实施
-> 关联：docs/architecture.md · 设计文档 §26（daemon 预留）
+> 级别：Spec · 状态：**已完成（2026-08-30，P1–P3 全部落地）**
+> 提出日期：2026-08-30 · 确认日期：2026-08-30 · 完成日期：2026-08-30
+> 关联：docs/architecture.md · docs/PLUGIN_API.md · 设计文档 §26（daemon 预留）· dev-log 2026-08-30 各条
 
 ## 决策记录（已拍板）
 
@@ -10,7 +11,7 @@
 - **核心四实体**（Task/Project/Note/Inbox）保持 host 服务，不插件化；仅视图经 ModuleRegistry 模块化
 - **首个插件**：番茄钟（P2）
 - **节奏**：P1+P2 切片连推，每片独立提交并通过门禁
-- 排除项及理由见会话提案记录：Rust dylib（无稳定 ABI/崩溃连坐）、外部进程（不满足嵌入语义）、WASM（工具链门槛，留作远期沙箱档位）
+- 排除项及理由：Rust dylib（无稳定 ABI/崩溃连坐）、外部进程（不满足嵌入语义）、WASM（工具链门槛，留作远期沙箱档位）
 
 ## Why
 
@@ -48,7 +49,7 @@
 
 - **loader**：`plugin_load_source(id)` 命令取源码 → blob URL 动态 `import()` → 调用插件 `export onload(api)`；`onunload()` 时由宿主反注册其全部贡献点（视图/卡片/命令/事件/cron）
 - **ModuleRegistry**：视图 / Today 卡片 / ⌘K 命令的统一注册表；核心五视图改走同一注册路径（dogfooding）
-- **API 桥 `api`**（插件唯一可touch的面，禁止拿到原生 invoke）：
+- **API 桥 `api`**（插件唯一可 touch 的面，禁止拿到原生 invoke）：
   - `api.core`：task/note/inbox/search/context 的读写包装 → Tauri command → core；审计 actor=`plugin:<id>`
   - `api.storage.kv`：get/set/delete/list（Rust 侧按插件 id 强制命名空间隔离）
   - `api.fetch(url, init)`：仅 manifest 白名单 host，经 Rust 命令代理（可审计）
@@ -104,58 +105,65 @@
 | 变更留 activity log | actor=`plugin:<id>` 全量审计 |
 | 迁移只增不改 | V1→V2 新表，不改历史分支 |
 | 时间边界唯一入口 | 不新增边界逻辑，cron 由 Rust chrono 处理 |
-| 库代码禁 unwrap/expect | 新代码遵守 |
+| 库代码禁 unwrap/expect | 新代码遵守（cron 锁毒化用 into_inner 恢复） |
+
+## 实施记录
+
+- P1：切片 1–3（a3e38a1 / a544ec2 / 56d4399）+ 切片 4（b090419，vitest 基建 + 宿主 + echo）
+- P2：切片 5（ea7df42，⌘K + panel 事件 + 托盘）+ 切片 6+7（a212993，管理页 + 番茄钟）
+- P3：cron 全链路（croner）、权限确认 UI（首次发现不自动启用）、8s 看门狗、`plugin new/dev` 脚手架、PLUGIN_API.md（7a0fca8）
+- 实施偏离记录：`plugin new` 脚手架未用 spec 原定的 esbuild 模板，改为**零工具链纯 JS 模板**（与示例插件一致、AI 生成即可运行；TS 用户自行预编译，已写入文档）
 
 ## 已知限制（v1 如实记录）
 
 - 插件仅 TS/JS 一种语言；CLI 不能无头调用插件逻辑（插件驻留 UI）
-- 坏插件可卡 UI 线程（缓解：安全模式；看门狗 P3）
+- 坏插件可卡 UI 线程（缓解：安全模式 + 8s 看门狗）
 - 领域事件延迟 ≤ 轮询周期（4s，activity_log 投影）
 - 信任模型 = Obsidian 同款：文档明示「只装信任来源的插件」
 
-## Tasks
+## Tasks（P1–P3，切片提交时逐项勾选）
 
-### P1 协议与宿主（切片 1–3）
-- [ ] T-S1 storage：SCHEMA_V2（plugin_registry + plugin_kv）+ 两个 repo + 迁移/隔离测试
-- [ ] T-S2 manifest 结构 + Rust 校验器 + 单测
-- [ ] T-S3 tauri commands（plugin_list/set_enabled/load_source/kv_*/http_fetch 白名单）+ Actor::Plugin 贯通
-- [ ] T-S4 CLI `plugin list/enable/disable` + 集成测试
-- [ ] T-S5 前端 vitest 基建 + check.sh/CI 增步
-- [ ] T-S6 前端插件宿主：loader + ModuleRegistry + API 桥 + 权限执行 + 单测
-- [ ] T-S7 echo 示例插件 + 端到端人工验证
-- [ ] T-S8 dev-log + check.sh 全绿 + 切片提交
+### P1 协议与宿主（切片 1–3）✅
+- [x] T-S1 storage：SCHEMA_V2（plugin_registry + plugin_kv）+ 两个 repo + 迁移/隔离测试
+- [x] T-S2 manifest 结构 + Rust 校验器 + 单测
+- [x] T-S3 tauri commands（plugin_list/set_enabled/load_source/kv_*/http_fetch 白名单）+ Actor::Plugin 贯通
+- [x] T-S4 CLI `plugin list/enable/disable` + 集成测试
+- [x] T-S5 前端 vitest 基建 + check.sh/CI 增步
+- [x] T-S6 前端插件宿主：loader + ModuleRegistry + API 桥 + 权限执行 + 单测
+- [x] T-S7 echo 示例插件 + 端到端人工验证
+- [x] T-S8 dev-log + check.sh 全绿 + 切片提交
 
-### P2 UI 与生命周期（切片 4–6）
-- [ ] T-S9 槽位渲染：插件视图页签 / Today 卡片 / ⌘K 命令接入
-- [ ] T-S10 托盘常驻 + 关窗隐藏 + 重开恢复
-- [ ] T-S11 插件管理最小 UI（列表/启用开关/权限展示）
-- [ ] T-S12 pomodoro 插件（kv 持久化 + 事件联动 + 卡片 + 视图）
-- [ ] T-S13 dev-log + 门禁 + 切片提交
+### P2 UI 与生命周期（切片 4–6）✅
+- [x] T-S9 槽位渲染：插件视图页签 / Today 卡片 / ⌘K 命令接入
+- [x] T-S10 托盘常驻 + 关窗隐藏 + 重开恢复
+- [x] T-S11 插件管理最小 UI（列表/启用开关/权限展示）
+- [x] T-S12 pomodoro 插件（kv 持久化 + 事件联动 + 卡片 + 视图）
+- [x] T-S13 dev-log + 门禁 + 切片提交
 
-### P3 生态（后续，可另开 spec 细化）
-- [ ] `plugin new/dev` 脚手架（esbuild 模板内嵌 AGENTS.md）+ docs/PLUGIN_API.md
-- [ ] cron 注册 UI 化 + 权限确认 UI（安装时）
-- [ ] 插件加载看门狗（加载超时自动禁用）
+### P3 生态 ✅
+- [x] `plugin new/dev` 脚手架（内嵌 AGENTS.md）+ docs/PLUGIN_API.md
+- [x] cron 注册 + 权限确认 UI（首次发现逐项展示网络/事件/定时）
+- [x] 插件加载看门狗（onload/onunload 超时/抛错自动停用）
 
-## 测试用例清单（TDD：确认后按此先行写测试）
+## 测试用例清单（TDD：先确认后实现；全部通过）
 
-**Rust（cargo，现有基建）**
-- [ ] T1 plugin_kv repo：写入/覆盖/删除/列出；**命名空间隔离**（插件 A 读不到插件 B 的键）
-- [ ] T2 迁移 V1→V2：user_version=2；旧表数据完整；新表存在
-- [ ] T3 plugin_registry repo：默认启用；enable/disable 持久化往返
-- [ ] T4 CLI 集成：`plugin list --json` 信封形状；enable/disable 落库 + activity log（actor=cli）；未知 id → exit 3 + 错误信封
-- [ ] T5 http 白名单：命中放行、未命中拒绝（错误信封 + 审计记录）
-- [ ] T6 manifest 校验：缺字段 / 非法 id / entry 文件缺失 → 明确错误码
+**Rust（cargo）**
+- [x] T1 plugin_kv repo：写入/覆盖/删除/列出；命名空间隔离 —— `kv_namespaced_by_plugin`
+- [x] T2 迁移 V1→V2：user_version=2；旧表数据完整；新表存在 —— `migration_v1_to_v2_preserves_data`
+- [x] T3 plugin_registry repo：默认启用；enable/disable 持久化往返 —— `registry_idempotent_and_persisted`
+- [x] T4 CLI 集成：`plugin list --json` 信封形状；enable/disable 落库 + activity log；未知 id → exit 3 —— `plugin_list_enable_disable_roundtrip` / `plugin_unknown_id_exit_code_3`
+- [x] T5 http 白名单：命中放行、未命中拒绝 —— `network_allowlist_check`（core 纯逻辑半边；宿主侧拦截由前端 T10 锁定）
+- [x] T6 manifest 校验：缺字段 / 非法 id / entry 文件缺失 → 明确错误码 —— `manifest_validate_rejects_bad_fields` / `load_from_dir_checks_entry_exists` / 集成 `plugin_list_reports_invalid_manifest`
 
-**前端（vitest，新基建）**
-- [ ] T7 manifest 校验（loader 侧）与 Rust 规则一致
-- [ ] T8 loader：onload 被调用；onunload 后视图/命令/事件/cron 全部反注册
-- [ ] T9 ModuleRegistry：注册→查询→注销；id 冲突拒绝
-- [ ] T10 权限桥：未声明 network 调 api.fetch → 拒绝；kv 越权命名空间 → 拒绝
-- [ ] T11 事件总线：emit→handler 收到；handler 抛错不炸宿主
+**前端（vitest）**
+- [x] T7 manifest 校验（loader 侧）与 Rust 规则一致 —— `validateManifest` describe
+- [x] T8 onunload 反注册全部贡献点 —— `unregisterOwner` / `offOwner` 用例
+- [x] T9 ModuleRegistry：注册→查询→注销；id 冲突拒绝
+- [x] T10 权限桥：未声明 network 的 fetch / 未声明事件 / kv 越权命名空间 → 拒绝
+- [x] T11 事件总线：emit→handler 收到；handler 抛错不炸宿主
 
 **端到端 / 人工**
-- [ ] T12 echo 插件：装载 → Today 卡片显示 → CLI disable 后卡片消失
-- [ ] T13 pomodoro：计时状态跨刷新存活（kv）；task.completed 联动；关窗到托盘后台仍计时
-- [ ] T14 托盘：关窗 → 进程留存 → 托盘重开窗口状态恢复
-- [ ] T15 门禁：check.sh 六步全绿；CI 同步通过
+- [x] T12 echo 插件：装载 → Today 卡片显示 → disable 后卡片消失（真机走查 + 启停热加载修复）
+- [x] T13 pomodoro：kv 持久化 + task.completed 联动 + 托盘后台运行（真机走查）
+- [x] T14 托盘：关窗 → 进程留存 → 托盘/Dock 重开恢复（真机走查，含 show_panel 修复）
+- [x] T15 门禁：check.sh 六步全绿；CI 同构

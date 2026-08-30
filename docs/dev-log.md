@@ -5,6 +5,30 @@
 
 ---
 
+## [2026-08-30] 文档管理体系：specs/ 与 plans/ 分目录 + 存量规格状态同步
+
+**需求简述**：用户指出 spec/plan 管理不规范——文档散落、状态失真（插件 spec 已全量实施但 Tasks 全部未勾选）、Plan 级任务无落点。要求 plans 归 `docs/plans/`、specs 归 `docs/specs/`，spec 文档严格按 spec 规则建立。
+
+**模式**：Plan
+
+**关键决策**：
+- **两目录分离**：`docs/specs/`（Spec 级）与 `docs/plans/`（Plan 级）；命名统一 `YYYY-MM-DD-<slug>.md`；各自内置 `_TEMPLATE.md`（结构固定）+ `README.md`（规则 + 索引表）。
+- **spec 结构固化**（对齐 AGENTS.md Spec 级规则）：Why → ADDED/MODIFIED/REMOVED → Unknown（提案阶段）→ 决策记录 → 红线核对 → 实施记录 → 已知限制 → Tasks → 测试用例清单。
+- **核心纪律**：切片提交时同步勾选 Tasks（防状态失真再次发生）；完成后当天改状态「已完成」；dev-log 回链文档；Plan 影响面超界 → 升级 Spec。
+- **存量同步按证据勾选，不凭印象**：逐项对照 git 提交、Rust/vitest/集成测试函数名、dev-log 真机走查记录后勾选——plugin-system/v1 状态改「已完成」（T-S1~T-S13、T1~T15 全勾，并补记 `plugin new` 脚手架偏离 esbuild 模板的事实）；ui-redesign 重构为标准 spec 结构并改「已完成」。
+- **已知遗留立 plan 案**（状态=提案，待确认后实施）：①StatCard 环比昨日（core 缺昨日数据）②project create/archive/delete 未刷 snapshot（红线 4 缺口）。
+
+**变更文件**：
+- `docs/specs/` — README.md（规则+索引）、_TEMPLATE.md、plugin-system/ui-redesign 两文档迁入并规范命名
+- `docs/plans/` — README.md、_TEMPLATE.md、statcard-day-delta、project-snapshot-refresh 两份提案
+- `AGENTS.md` — 流程分级新增「文档落位」段 + 关键参考加两行指针 + 目录结构补 specs/plans
+
+**验证结果**：✅ check.sh 全绿（纯文档改动，门禁确认无副作用）
+
+**下一步**：拍板两份待确认 plan（StatCard 环比 / project snapshot 刷新），按 Plan 流程实施。
+
+---
+
 ## [2026-08-30] 修复走查三问题②：confirm 失效 / 跳转不精确 / 项目可重命名
 
 **需求简述**：真机再反馈——①任务页新建任务首页不显示；②首页卡片跳转到错误的 tab；③项目无法删除、无法重命名。
