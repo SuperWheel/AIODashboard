@@ -5,6 +5,29 @@
 
 ---
 
+## [2026-08-30] Spec 管理升级：采用 OpenSpec 四件套变更包
+
+**需求简述**：用户指定以自身财务分析项目（Web_Financial_Analyse/openspec）的 OpenSpec 规范为准——今后 Spec 一律按「变更包四件套」生成，当天早些时候建立的单文件 spec 模式随即废弃。
+
+**模式**：Plan（文档体系调整）
+
+**关键决策**：
+- **四件套结构**（`openspec/changes/<NNN-slug>/`）：proposal.md（Why / What I Want / What I Know / What I Don't Know）→ spec.md（ADDED-N 每条带要求+验收 / MODIFIED / REMOVED / 非本变更范围）→ design.md（决策 N：选择/理由/后果 + 红线核对表）→ tasks.md（分阶段勾选 + TDD 测试清单 + 实施记录）。
+- **迁移而非并存**：docs/specs/ 两份单文件 spec 拆解为变更包 001-plugin-system、002-ui-redesign-bento，信息无损重组（决策记录→design、需求→spec、任务+测试→tasks），原目录删除——避免两套 spec 之家并存。
+- 新增 `openspec/README.md`（规则+索引）与 `openspec/project.md`（项目速览，细节指向 README/AGENTS 不重复维护）。
+- AGENTS.md「文档落位」段、关键参考、目录结构同步更新；plans/README 的升级路径改为指向变更包。
+- Plan 级（docs/plans/）不受影响，维持轻量模板。
+
+**变更文件**：
+- `openspec/` — README.md、project.md、changes/001-plugin-system/、changes/002-ui-redesign-bento/（各四件套）
+- 删除 `docs/specs/`；`AGENTS.md`、`docs/plans/README.md` 指针更新
+
+**验证结果**：✅ check.sh 全绿（纯文档改动）
+
+**下一步**：两份待确认 plan（StatCard 环比 / project snapshot 刷新）仍待拍板；下一个 Spec 级任务直接走变更包流程。
+
+---
+
 ## [2026-08-30] 文档管理体系：specs/ 与 plans/ 分目录 + 存量规格状态同步
 
 **需求简述**：用户指出 spec/plan 管理不规范——文档散落、状态失真（插件 spec 已全量实施但 Tasks 全部未勾选）、Plan 级任务无落点。要求 plans 归 `docs/plans/`、specs 归 `docs/specs/`，spec 文档严格按 spec 规则建立。

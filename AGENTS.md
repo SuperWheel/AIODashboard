@@ -28,7 +28,8 @@ apps/
 ├── cli/                  # `dashboard` 二进制（面向人类+AI 的入口）
 │   └── tests/integration.rs   # §31 四条链路的端到端测试
 └── desktop/              # Tauri 2：src/(React) + src-tauri/(Interface 层)
-docs/                     # architecture.md / dev-log.md / specs/ / plans/ / PLUGIN_API.md
+openspec/                 # Spec 变更包：changes/<NNN-slug>/ 四件套（proposal/spec/design/tasks）
+docs/                     # architecture.md / dev-log.md / plans/ / PLUGIN_API.md
 scripts/check.sh          # 机械门禁（与 CI 同构）
 .github/workflows/ci.yml  # CI（push/PR 自动跑同一套检查）
 ```
@@ -88,10 +89,11 @@ cargo build -p dashboard-cli && target/debug/dashboard --help   # CLI
 反模式：不看计划直接执行、一次生成全部代码、AI 报错后人肉改代码（应把报错喂回）、
 攒大 diff 不切片提交、只跑 type-check 就宣称交付（必须完整 build）。
 
-**文档落位**：Spec 级任务在 `docs/specs/` 建档，Plan 级任务在 `docs/plans/` 建档
-（命名 `YYYY-MM-DD-<slug>.md`，从各目录 `_TEMPLATE.md` 复制；规则与索引见各目录 README）。
-核心纪律：**切片提交时同步勾选文档里的 Tasks**；完成后当天把状态改「已完成」；
-实施中发现影响面超出 Plan → 升级为 Spec 另立文档。
+**文档落位**：Spec 级任务在 `openspec/changes/<NNN-slug>/` 建变更包，固定四件套
+`proposal / spec / design / tasks`（规则与索引见 `openspec/README.md`，格式对齐 OpenSpec）；
+Plan 级任务在 `docs/plans/` 建档（命名 `YYYY-MM-DD-<slug>.md`，从 `_TEMPLATE.md` 复制）。
+核心纪律：**切片提交时同步勾选 tasks.md 复选框**；完成后当天在 proposal.md 标注「已完成」；
+实施中发现影响面超出 Plan → 升级为 Spec 变更包。
 
 ## 测试规范
 
@@ -118,7 +120,7 @@ Task / Project / Note / Inbox / Today / Search + GUI + CLI --json + Widget Snaps
 - 总体设计文档 V0.1（用户提供的 PDF/MD，架构权威来源）
 - 架构落地说明：`docs/architecture.md`
 - 开发日志（每次对话后更新）：`docs/dev-log.md`
-- Spec 文档（Spec 级必须建档）：`docs/specs/`（README 含规则与索引）
+- Spec 变更包（Spec 级必须建档，四件套）：`openspec/changes/`（规则与索引见 `openspec/README.md`）
 - Plan 文档（Plan 级建档）：`docs/plans/`（README 含规则与索引）
 - 使用说明 & Roadmap：`README.md`
 - 链路测试范例：`apps/cli/tests/integration.rs`
