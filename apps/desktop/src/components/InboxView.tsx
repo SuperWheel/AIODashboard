@@ -46,24 +46,24 @@ export default function InboxView({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-white">收件箱</h1>
-      <p className="mt-1 text-xs text-slate-500">
+      <h1 className="text-xl font-semibold text-ink">收件箱</h1>
+      <p className="mt-1 text-xs text-ink2">
         任何暂时不知道放哪里的想法、待办、网址、文本，先丢进这里，之后再整理成任务 / 笔记。
       </p>
 
       <SectionTitle>快速收集</SectionTitle>
-      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#161a22] px-3 py-2">
+      <div className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2">
         <input
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="一个想法 / 一条待办 / 一个链接…"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-600"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink3"
         />
         <button
           onClick={add}
           disabled={!content.trim() || busy}
-          className="rounded-lg bg-violet-500/90 px-3 py-1 text-xs font-medium text-white hover:bg-violet-400 disabled:opacity-40"
+          className="rounded-lg bg-violet px-3 py-1 text-xs font-medium text-onaccent hover:bg-violet/90 disabled:opacity-40"
         >
           收集
         </button>
@@ -71,12 +71,12 @@ export default function InboxView({
 
       <SectionTitle
         right={
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink3">
             <input
               type="checkbox"
               checked={showProcessed}
               onChange={(e) => setShowProcessed(e.target.checked)}
-              className="accent-emerald-400"
+              className="accent-accent"
             />
             显示已处理
           </label>
@@ -92,10 +92,10 @@ export default function InboxView({
           {items.map((i) => (
             <div
               key={i.id}
-              className="group flex items-center gap-3 border-b border-white/5 px-3 py-2.5 last:border-b-0 hover:bg-white/[0.03]"
+              className="group flex items-center gap-3 border-b border-line/60 px-3 py-2.5 last:border-b-0 hover:bg-hover"
             >
               <span
-                className={`flex-1 truncate text-sm ${i.status === "processed" ? "text-slate-600 line-through" : ""}`}
+                className={`flex-1 truncate text-sm ${i.status === "processed" ? "text-ink3 line-through" : ""}`}
                 title={i.content}
               >
                 {i.content}
@@ -105,13 +105,13 @@ export default function InboxView({
                   <Badge tone="slate">{fmtDateTime(i.created_at)}</Badge>
                   <button
                     onClick={() => act(() => api.inboxToTask(i.id))}
-                    className="invisible rounded-md border border-white/10 px-2 py-0.5 text-xs text-slate-300 hover:border-emerald-400/40 hover:text-emerald-300 group-hover:visible"
+                    className="invisible rounded-md border border-line px-2 py-0.5 text-xs text-ink2 hover:border-accent/40 hover:text-accent group-hover:visible"
                   >
                     转任务
                   </button>
                   <button
                     onClick={() => act(() => api.inboxToNote(i.id))}
-                    className="invisible rounded-md border border-white/10 px-2 py-0.5 text-xs text-slate-300 hover:border-sky-400/40 hover:text-sky-300 group-hover:visible"
+                    className="invisible rounded-md border border-line px-2 py-0.5 text-xs text-ink2 hover:border-info/40 hover:text-info group-hover:visible"
                   >
                     转笔记
                   </button>
@@ -121,7 +121,7 @@ export default function InboxView({
               )}
               <button
                 onClick={() => confirm("删除该条目？") && act(() => api.deleteInboxItem(i.id))}
-                className="invisible shrink-0 text-slate-600 transition-colors hover:text-rose-400 group-hover:visible"
+                className="invisible shrink-0 text-ink3 transition-colors hover:text-danger group-hover:visible"
               >
                 ×
               </button>

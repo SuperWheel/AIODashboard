@@ -1,5 +1,90 @@
 @import "tailwindcss";
 
+/*
+ * 语义色 token（docs/ui-redesign-2026-08.md §二）。
+ * 组件只允许使用这里的语义色（bg/surface/ink/accent…），禁止写死色值；
+ * 双主题 = 同一组变量在浅色（默认）/ 深色（[data-theme="dark"] 或系统深色）之间翻转。
+ */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface-2);
+  --color-line: var(--line);
+  --color-hover: var(--hover);
+  --color-ink: var(--ink);
+  --color-ink2: var(--ink-2);
+  --color-ink3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-onaccent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-info: var(--info);
+  --color-violet: var(--violet);
+  --shadow-card: var(--card-shadow);
+}
+
+/* 浅色（默认）：暖纸白书房 */
+:root {
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #f0efea;
+  --line: rgb(27 29 35 / 0.1);
+  --hover: rgb(27 29 35 / 0.05);
+  --ink: #1b1d23;
+  --ink-2: #5f6572;
+  --ink-3: #9aa0ac;
+  --accent: #059669; /* emerald-600 */
+  --on-accent: #ffffff;
+  --danger: #e11d48; /* rose-600 */
+  --warn: #b45309; /* amber-700 */
+  --info: #0284c7; /* sky-600 */
+  --violet: #7c3aed; /* violet-600 */
+  --card-shadow:
+    0 1px 2px rgb(27 29 35 / 0.05), 0 6px 20px -8px rgb(27 29 35 / 0.1);
+  color-scheme: light;
+}
+
+/* 深色：深夜工作台。显式选择（data-theme="dark"）或跟随系统 */
+[data-theme="dark"] {
+  --bg: #0b0d12;
+  --surface: #14171f;
+  --surface-2: #1b1f2a;
+  --line: rgb(232 234 240 / 0.09);
+  --hover: rgb(255 255 255 / 0.05);
+  --ink: #e8eaf0;
+  --ink-2: #8b93a7;
+  --ink-3: #5c6478;
+  --accent: #34d399; /* emerald-400 */
+  --on-accent: #07110d;
+  --danger: #fb7185; /* rose-400 */
+  --warn: #fbbf24; /* amber-400 */
+  --info: #38bdf8; /* sky-400 */
+  --violet: #a78bfa; /* violet-400 */
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0d12;
+    --surface: #14171f;
+    --surface-2: #1b1f2a;
+    --line: rgb(232 234 240 / 0.09);
+    --hover: rgb(255 255 255 / 0.05);
+    --ink: #e8eaf0;
+    --ink-2: #8b93a7;
+    --ink-3: #5c6478;
+    --accent: #34d399;
+    --on-accent: #07110d;
+    --danger: #fb7185;
+    --warn: #fbbf24;
+    --info: #38bdf8;
+    --violet: #a78bfa;
+    --card-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+    color-scheme: dark;
+  }
+}
+
 html,
 body,
 #root {
@@ -8,8 +93,8 @@ body,
 
 body {
   margin: 0;
-  background: #0f1115;
-  color: #e6e8ee;
+  background: var(--bg);
+  color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
     "Helvetica Neue", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -21,14 +106,28 @@ textarea {
   user-select: text;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a3040;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

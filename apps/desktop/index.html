@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AIODashboard</title>
+    <script>
+      // 首帧前还原手动选择的主题，避免浅色闪帧（system 时不设属性，交给媒体查询）
+      try {
+        var t = localStorage.getItem("aio-theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

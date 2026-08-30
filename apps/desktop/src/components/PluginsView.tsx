@@ -59,8 +59,8 @@ export default function PluginsView({
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-white">插件</h1>
-        <span className="text-xs text-slate-500">
+        <h1 className="text-xl font-semibold text-ink">插件</h1>
+        <span className="text-xs text-ink3">
           插件目录：~/Library/Application Support/AIODashboard/plugins/
         </span>
       </div>
@@ -82,26 +82,26 @@ export default function PluginsView({
                 <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-100">{m?.name ?? p.name}</span>
-                      <span className="text-[10px] text-slate-500">v{m?.version ?? p.version}</span>
+                      <span className="text-sm font-medium text-ink">{m?.name ?? p.name}</span>
+                      <span className="text-[10px] text-ink3">v{m?.version ?? p.version}</span>
                       {state === "on" && <Badge tone="green">已启用</Badge>}
                       {state === "off" && <Badge>已停用</Badge>}
                       {state === "new" && <Badge tone="amber">未注册</Badge>}
                       {state === "error" && <Badge tone="red">异常</Badge>}
                     </div>
-                    <div className="mt-0.5 truncate text-[11px] text-slate-500">{p.id}</div>
+                    <div className="mt-0.5 truncate text-[11px] text-ink3">{p.id}</div>
                     {m?.description && (
-                      <div className="mt-1 text-xs text-slate-400">{m.description}</div>
+                      <div className="mt-1 text-xs text-ink2">{m.description}</div>
                     )}
-                    {p.error && <div className="mt-1 text-xs text-rose-300">{p.error}</div>}
+                    {p.error && <div className="mt-1 text-xs text-danger">{p.error}</div>}
                   </div>
                   <button
                     onClick={() => toggle(p)}
                     disabled={busy === p.id || state === "error"}
                     className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 ${
                       state === "on"
-                        ? "bg-white/5 text-slate-300 hover:bg-white/10"
-                        : "bg-emerald-500/90 text-[#0f1115] hover:bg-emerald-400"
+                        ? "bg-hover text-ink2 hover:text-ink"
+                        : "bg-accent text-onaccent hover:bg-accent/90"
                     }`}
                   >
                     {state === "on" ? "停用" : "启用"}
@@ -110,14 +110,14 @@ export default function PluginsView({
 
                 {(perms.network?.length ?? 0) + (perms.events?.length ?? 0) + (perms.cron?.length ?? 0) >
                   0 && (
-                  <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line/60 pt-3">
                     {PERM_LABELS.map(({ key, label }) => {
                       const items = (perms[key] as string[] | undefined) ?? [];
                       if (items.length === 0) return null;
                       return items.map((v) => (
                         <span
                           key={`${key}-${v}`}
-                          className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-400"
+                          className="rounded-md bg-hover px-1.5 py-0.5 text-[10px] text-ink2"
                           title={`${label}权限`}
                         >
                           {label} · {v}

@@ -4,10 +4,10 @@ import type { SearchHit, SearchKind } from "../types";
 import type { RegisteredCommand } from "../plugins/registry";
 
 const KIND_META: Record<SearchKind, { label: string; cls: string }> = {
-  task: { label: "任务", cls: "bg-emerald-500/15 text-emerald-300" },
-  project: { label: "项目", cls: "bg-sky-500/15 text-sky-300" },
-  note: { label: "笔记", cls: "bg-violet-500/15 text-violet-300" },
-  inbox: { label: "收件箱", cls: "bg-slate-500/15 text-slate-300" },
+  task: { label: "任务", cls: "bg-accent/15 text-accent" },
+  project: { label: "项目", cls: "bg-info/15 text-info" },
+  note: { label: "笔记", cls: "bg-violet/15 text-violet" },
+  inbox: { label: "收件箱", cls: "bg-ink3/15 text-ink2" },
 };
 
 export default function SearchPalette({
@@ -71,7 +71,7 @@ export default function SearchPalette({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-[#161a22] shadow-2xl"
+        className="w-full max-w-xl overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <input
@@ -82,51 +82,51 @@ export default function SearchPalette({
             if (e.key === "Escape") onClose();
           }}
           placeholder="搜索任务、项目、笔记、收件箱…"
-          className="w-full border-b border-white/10 bg-transparent px-5 py-4 text-sm outline-none placeholder:text-slate-600"
+          className="w-full border-b border-line bg-transparent px-5 py-4 text-sm outline-none placeholder:text-ink3"
         />
         <div className="max-h-[50vh] overflow-y-auto p-2">
           {matchedCommands.length > 0 && (
             <div className="mb-1">
-              <p className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-slate-600">
+              <p className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-ink3">
                 插件命令
               </p>
               {matchedCommands.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => onRunCommand(c)}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/[0.05]"
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-hover"
                 >
-                  <span className="shrink-0 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
+                  <span className="shrink-0 rounded-md bg-warn/15 px-1.5 py-0.5 text-[10px] text-warn">
                     命令
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-slate-200">{c.title}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink">{c.title}</span>
                 </button>
               ))}
             </div>
           )}
           {!q.trim() ? (
             matchedCommands.length > 0 ? null : (
-              <p className="px-3 py-6 text-center text-xs text-slate-600">
+              <p className="px-3 py-6 text-center text-xs text-ink3">
                 输入关键词，回车或点击结果跳转 · Esc 关闭
               </p>
             )
           ) : hits.length === 0 && matchedCommands.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-slate-600">无匹配结果</p>
+            <p className="px-3 py-6 text-center text-xs text-ink3">无匹配结果</p>
           ) : (
             hits.map((h) => (
               <button
                 key={`${h.kind}-${h.id}`}
                 onClick={() => onNavigate(h.kind)}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/[0.05]"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-hover"
               >
                 <span
                   className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] ${KIND_META[h.kind].cls}`}
                 >
                   {KIND_META[h.kind].label}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm text-slate-200">{h.title}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">{h.title}</span>
                 {h.subtitle && (
-                  <span className="hidden max-w-[40%] truncate text-xs text-slate-500 sm:block">
+                  <span className="hidden max-w-[40%] truncate text-xs text-ink3 sm:block">
                     {h.subtitle}
                   </span>
                 )}

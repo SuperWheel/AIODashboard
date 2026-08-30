@@ -249,7 +249,7 @@ export default function App() {
     registry.views.find((v) => v.key === view) ?? registry.views[0];
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-[#0f1115]">
+    <div className="flex h-full w-full overflow-hidden bg-bg">
       <Sidebar
         items={registry.views.map((v) => ({ key: v.key, label: v.title, icon: v.icon }))}
         current={activeView.key}

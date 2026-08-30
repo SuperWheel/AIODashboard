@@ -43,10 +43,10 @@ export default function TodayView({
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-white">
+        <h1 className="text-xl font-semibold text-ink">
           {greet}，今天 {data?.date ?? ""}
         </h1>
-        <span className="text-xs text-slate-500">GUI · CLI · AI 共用同一 Rust Core</span>
+        <span className="text-xs text-ink3">GUI · CLI · AI 共用同一 Rust Core</span>
       </div>
 
       {/* 统计 */}
@@ -62,27 +62,27 @@ export default function TodayView({
 
       {/* 快速添加 */}
       <SectionTitle>快速添加</SectionTitle>
-      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#161a22] px-3 py-2">
+      <div className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="输入任务标题，回车创建…"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-600"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink3"
         />
-        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400">
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink2">
           <input
             type="checkbox"
             checked={dueToday}
             onChange={(e) => setDueToday(e.target.checked)}
-            className="accent-emerald-400"
+            className="accent-accent"
           />
           今天到期
         </label>
         <button
           onClick={add}
           disabled={!title.trim() || busy}
-          className="rounded-lg bg-emerald-500/90 px-3 py-1 text-xs font-medium text-[#0f1115] transition-colors hover:bg-emerald-400 disabled:opacity-40"
+          className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-onaccent transition-colors hover:bg-accent/90 disabled:opacity-40"
         >
           添加
         </button>
@@ -92,7 +92,7 @@ export default function TodayView({
       {(data?.overdue_tasks.length ?? 0) > 0 && (
         <>
           <SectionTitle>已逾期</SectionTitle>
-          <Card className="border-rose-400/20">
+          <Card className="border-danger/30">
             {data!.overdue_tasks.map((t) => (
               <TaskRow key={t.id} task={t} onChanged={onChanged} />
             ))}
@@ -119,7 +119,7 @@ export default function TodayView({
         <div>
           <SectionTitle
             right={
-              <button className="text-xs text-slate-500 hover:text-slate-300" onClick={() => onNav("projects")}>
+              <button className="text-xs text-ink3 hover:text-ink" onClick={() => onNav("projects")}>
                 全部 →
               </button>
             }
@@ -136,14 +136,14 @@ export default function TodayView({
                 ))}
               </div>
             ) : (
-              <span className="text-xs text-slate-600">暂无活跃项目</span>
+              <span className="text-xs text-ink3">暂无活跃项目</span>
             )}
           </Card>
         </div>
         <div>
           <SectionTitle
             right={
-              <button className="text-xs text-slate-500 hover:text-slate-300" onClick={() => onNav("notes")}>
+              <button className="text-xs text-ink3 hover:text-ink" onClick={() => onNav("notes")}>
                 全部 →
               </button>
             }
@@ -154,13 +154,13 @@ export default function TodayView({
             {data && data.recent_notes.length > 0 ? (
               <ul className="space-y-1.5">
                 {data.recent_notes.map((n) => (
-                  <li key={n.id} className="truncate text-xs text-slate-300">
+                  <li key={n.id} className="truncate text-xs text-ink2">
                     · {n.title || "(无标题)"}
                   </li>
                 ))}
               </ul>
             ) : (
-              <span className="text-xs text-slate-600">暂无笔记</span>
+              <span className="text-xs text-ink3">暂无笔记</span>
             )}
           </Card>
         </div>

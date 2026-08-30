@@ -92,10 +92,10 @@ export default function NotesView({
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col">
       <div className="flex items-center justify-between pb-4">
-        <h1 className="text-xl font-semibold text-white">笔记</h1>
+        <h1 className="text-xl font-semibold text-ink">笔记</h1>
         <button
           onClick={create}
-          className="rounded-lg bg-emerald-500/90 px-3 py-1.5 text-xs font-medium text-[#0f1115] hover:bg-emerald-400"
+          className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-onaccent hover:bg-accent/90"
         >
           新建笔记
         </button>
@@ -103,22 +103,22 @@ export default function NotesView({
 
       <div className="flex min-h-0 flex-1 gap-4">
         {/* 列表 */}
-        <div className="w-64 shrink-0 overflow-y-auto rounded-xl border border-white/10 bg-[#12151c]">
+        <div className="w-64 shrink-0 overflow-y-auto rounded-xl border border-line bg-surface2">
           {notes.length === 0 ? (
-            <p className="p-4 text-xs text-slate-600">暂无笔记</p>
+            <p className="p-4 text-xs text-ink3">暂无笔记</p>
           ) : (
             notes.map((n) => (
               <button
                 key={n.id}
                 onClick={() => pick(n)}
-                className={`block w-full border-b border-white/5 px-3 py-2.5 text-left transition-colors ${
-                  selectedId === n.id ? "bg-emerald-500/10" : "hover:bg-white/[0.03]"
+                className={`block w-full border-b border-line/60 px-3 py-2.5 text-left transition-colors ${
+                  selectedId === n.id ? "bg-accent/10" : "hover:bg-hover"
                 }`}
               >
-                <div className="truncate text-sm text-slate-200">
+                <div className="truncate text-sm text-ink">
                   {n.title || "(无标题)"}
                 </div>
-                <div className="mt-0.5 truncate text-xs text-slate-600">
+                <div className="mt-0.5 truncate text-xs text-ink3">
                   {n.body.split("\n")[0] || "空笔记"}
                 </div>
               </button>
@@ -127,7 +127,7 @@ export default function NotesView({
         </div>
 
         {/* 编辑区 */}
-        <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-white/10 bg-[#161a22]">
+        <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-line bg-surface">
           {!selected ? (
             <div className="flex h-full items-center justify-center">
               <Empty text="选择或新建一条笔记" />
@@ -141,7 +141,7 @@ export default function NotesView({
                   setDirty(true);
                 }}
                 placeholder="标题"
-                className="border-b border-white/10 bg-transparent px-4 py-3 font-medium outline-none placeholder:text-slate-600"
+                className="border-b border-line bg-transparent px-4 py-3 font-medium outline-none placeholder:text-ink3"
               />
               <textarea
                 value={body}
@@ -150,23 +150,23 @@ export default function NotesView({
                   setDirty(true);
                 }}
                 placeholder="正文…（支持多行）"
-                className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 text-sm leading-relaxed outline-none placeholder:text-slate-600"
+                className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 text-sm leading-relaxed outline-none placeholder:text-ink3"
               />
-              <div className="flex items-center justify-between border-t border-white/10 px-4 py-2.5">
-                <span className="text-xs text-slate-600">
+              <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
+                <span className="text-xs text-ink3">
                   {dirty ? "有未保存修改" : "已同步"}
                 </span>
                 <div className="flex gap-2">
                   <button
                     onClick={remove}
-                    className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-slate-400 hover:text-rose-400"
+                    className="rounded-md border border-line px-2.5 py-1 text-xs text-ink2 hover:text-danger"
                   >
                     删除
                   </button>
                   <button
                     onClick={save}
                     disabled={!dirty}
-                    className="rounded-md bg-emerald-500/90 px-3 py-1 text-xs font-medium text-[#0f1115] hover:bg-emerald-400 disabled:opacity-40"
+                    className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-onaccent hover:bg-accent/90 disabled:opacity-40"
                   >
                     保存
                   </button>

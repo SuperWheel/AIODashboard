@@ -49,33 +49,33 @@ export default function TasksView({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-white">任务</h1>
+      <h1 className="text-xl font-semibold text-ink">任务</h1>
 
-      <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 bg-[#161a22] px-3 py-2">
+      <div className="mt-5 flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="新任务标题，回车创建…"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-600"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink3"
         />
         <input
           type="date"
           value={due}
           onChange={(e) => setDue(e.target.value)}
-          className="rounded-md border border-white/10 bg-transparent px-2 py-1 text-xs text-slate-300 outline-none [color-scheme:dark]"
+          className="rounded-md border border-line bg-transparent px-2 py-1 text-xs text-ink2 outline-none"
         />
         <button
           onClick={add}
           disabled={!title.trim() || busy}
-          className="rounded-lg bg-emerald-500/90 px-3 py-1 text-xs font-medium text-[#0f1115] hover:bg-emerald-400 disabled:opacity-40"
+          className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-onaccent hover:bg-accent/90 disabled:opacity-40"
         >
           添加
         </button>
       </div>
 
       <SectionTitle
-        right={<span className="text-xs text-slate-500">{tasks.length} 个</span>}
+        right={<span className="text-xs text-ink3">{tasks.length} 个</span>}
       >
         <div className="flex gap-1">
           {TABS.map((t) => (
@@ -84,8 +84,8 @@ export default function TasksView({
               onClick={() => setTab(t.key)}
               className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
                 tab === t.key
-                  ? "bg-emerald-500/10 font-medium text-emerald-300"
-                  : "text-slate-500 hover:text-slate-300"
+                  ? "bg-accent/10 font-medium text-accent"
+                  : "text-ink3 hover:text-ink"
               }`}
             >
               {t.label}
