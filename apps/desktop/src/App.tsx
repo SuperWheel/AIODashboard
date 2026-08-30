@@ -129,20 +129,20 @@ export default function App() {
     </>
   );
 
-  const view =
+  const activeView =
     registry.views.find((v) => v.key === view) ?? registry.views[0];
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-[#0f1115]">
       <Sidebar
         items={registry.views.map((v) => ({ key: v.key, label: v.title, icon: v.icon }))}
-        current={view.key}
+        current={activeView.key}
         onNav={setView}
         inboxOpen={today?.open_inbox_count ?? 0}
       />
       <main className="flex-1 overflow-y-auto px-8 py-6">
         <div className="mx-auto max-w-3xl">
-          <view.component
+          <activeView.component
             today={today}
             onChanged={bump}
             onNav={setView}

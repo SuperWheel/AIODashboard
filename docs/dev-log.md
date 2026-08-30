@@ -5,6 +5,36 @@
 
 ---
 
+## [2026-08-30] 插件系统 P1（plugin-system/v1 切片 1–4）
+
+**需求简述**：按已确认的 spec 实施 P1——存储/领域基础、manifest 校验、CLI 与 Tauri 命令层、前端插件宿主与 echo 示例插件。
+
+**模式**：Spec（TDD：测试清单先确认，实现随后）
+
+**关键决策**：
+- `Actor` 新增 `Plugin(String)`（去 Copy），serde 手工实现保持 JSON 字符串形态 `plugin:<id>`。
+- SCHEMA_V2 除两新表外**重建 activity_log 放开 actor CHECK**（测试抓出：旧 CHECK 拒绝插件审计），旧数据原样迁移，符合"只增不改"。
+- 插件审计策略：注册/启停进 activity log；`plugin_kv` 是数据面不审计（否则计时插件刷屏）。
+- Tauri 写命令增可选 `actor` 参数：普通前端不传（=user），插件桥传 `plugin:<id>`。
+- 前端宿主依赖注入（coreApi/registry/events 可替换），vitest 直测桥权限逻辑；loader 为平台粘合层不进单测。
+- 核心五视图改走 ModuleRegistry（owner="core"），与插件同路径 dogfooding。
+- 教训：`check.sh | tail` 管道吞退出码导致一次"假绿"提交（App.tsx 变量遮蔽 TS 错误），已 amend 修复；门禁判定必须看退出码。
+
+**变更文件**：
+- `crates/dashboard-{domain,storage,core}/` — Actor/PluginRegistration、SCHEMA_V2、plugin_repo、plugin_manifest、plugin_service
+- `apps/cli/` — plugin list/enable/disable + 4 条集成测试
+- `apps/desktop/` — src/plugins/*（宿主六模块）、App/Sidebar/TodayView 模块化改造、命令层 8 个 plugin_* command、17 个 vitest
+- `scripts/check.sh` + `.github/workflows/ci.yml` — 六步门禁（新增 vitest）
+- `examples/plugins/com.leeyl.echo/` — 最小示例（含面向 AI 的 AGENTS.md）
+
+**验证结果**：
+- ✅ `bash scripts/check.sh` 六步全绿（Rust 22 测试 + vitest 17 测试）
+- ⚠️ 待人工 GUI 验证（T12/T14）：echo 卡片显示、`plugin disable` 后消失、CLI enable/disable 与面板联动
+
+**下一步**：P2——插件视图页签/⌘K 命令接线、托盘常驻、插件管理页、pomodoro 插件。
+
+---
+
 ## [2026-08-30] 接入 GitHub 远端
 
 **需求简述**：创建与项目同名的私人 GitHub 仓库并推送现有提交。
