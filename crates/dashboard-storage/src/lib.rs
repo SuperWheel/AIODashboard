@@ -10,6 +10,7 @@ use rusqlite::Connection;
 pub mod activity_repo;
 pub mod inbox_repo;
 pub mod note_repo;
+pub mod plugin_repo;
 pub mod project_repo;
 pub mod task_repo;
 mod timeutil;
@@ -51,11 +52,16 @@ pub fn open_default() -> rusqlite::Result<Connection> {
     open(&default_db_path())
 }
 
-fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+/// 对已打开的连接执行迁移（公开给内存库 / 测试场景使用）。
+pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if version < 1 {
         conn.execute_batch(SCHEMA_V1)?;
         conn.pragma_update(None, "user_version", 1)?;
+    }
+    if version < 2 {
+        conn.execute_batch(SCHEMA_V2)?;
+        conn.pragma_update(None, "user_version", 2)?;
     }
     Ok(())
 }
@@ -118,6 +124,28 @@ CREATE TABLE IF NOT EXISTS widget_snapshots (
     generated_at TEXT NOT NULL,
     payload      TEXT NOT NULL
 );
+
+COMMIT;
+"#;
+
+/// V2（plugin-system/v1）：插件注册表与插件命名空间 KV。
+const SCHEMA_V2: &str = r#"
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS plugin_registry (
+    id           TEXT PRIMARY KEY,
+    enabled      INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+    installed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS plugin_kv (
+    plugin_id  TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (plugin_id, key)
+);
+CREATE INDEX IF NOT EXISTS idx_plugin_kv_plugin ON plugin_kv(plugin_id);
 
 COMMIT;
 "#;

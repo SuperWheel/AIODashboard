@@ -6,6 +6,7 @@
 pub mod context_service;
 pub mod inbox_service;
 pub mod note_service;
+pub mod plugin_service;
 pub mod project_service;
 pub mod search_service;
 pub mod snapshot;
@@ -88,7 +89,17 @@ mod tests {
             Actor::Automation,
             Actor::System,
         ] {
-            assert_eq!(Actor::parse(a.as_str()), Some(a));
+            assert_eq!(Actor::parse(&a.as_str()), Some(a));
         }
+        let p = Actor::Plugin("com.leeyl.pomodoro".to_string());
+        assert_eq!(p.as_str(), "plugin:com.leeyl.pomodoro");
+        assert_eq!(Actor::parse(&p.as_str()), Some(p.clone()));
+        // 非法形态不解析为 Plugin
+        assert_eq!(Actor::parse("plugin:"), None);
+        // serde 往返：actor 序列化始终是字符串
+        let json = serde_json::to_string(&p).unwrap();
+        assert_eq!(json, "\"plugin:com.leeyl.pomodoro\"");
+        let back: Actor = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, p);
     }
 }
