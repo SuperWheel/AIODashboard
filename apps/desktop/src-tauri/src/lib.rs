@@ -328,6 +328,17 @@ async fn plugin_http_fetch(plugin_id: String, url: String) -> R<serde_json::Valu
     Ok(serde_json::json!({ "status": status, "text": text, "json": json }))
 }
 
+/// 唤出面板：应用整体可能被 macOS 隐藏（⌘H / 隐藏其他），仅 window.show() 不够，
+/// 必须先 app.show() 解除应用级隐藏；窗口也可能处于最小化，一并恢复。
+fn show_panel(app: &tauri::AppHandle) {
+    let _ = app.show();
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(plugin_cron::CronScheduler::default())
@@ -351,22 +362,13 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
+                    "show" => show_panel(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
+                        show_panel(tray.app_handle());
                     }
                 });
             if let Some(icon) = app.default_window_icon() {
@@ -408,6 +410,12 @@ pub fn run() {
             plugin_kv_list,
             plugin_http_fetch
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // 点程序坞图标唤出面板：窗口隐藏到托盘后，macOS 对 Dock 点击发 Reopen
+            if let tauri::RunEvent::Reopen { .. } = event {
+                show_panel(app);
+            }
+        });
 }
