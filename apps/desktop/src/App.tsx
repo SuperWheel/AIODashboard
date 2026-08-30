@@ -9,6 +9,7 @@ import ProjectsView from "./components/ProjectsView";
 import NotesView from "./components/NotesView";
 import InboxView from "./components/InboxView";
 import SearchPalette from "./components/SearchPalette";
+import PluginsView from "./components/PluginsView";
 import { EventBus } from "./plugins/events";
 import { ModuleRegistry, type PluginCardProps } from "./plugins/registry";
 import { loadAllPlugins, type LoadedPlugin } from "./plugins/loader";
@@ -63,6 +64,13 @@ export default function App() {
       title: "收件箱",
       icon: "⬇",
       component: (p) => <InboxView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+    });
+    registry.registerView({
+      owner: "core",
+      key: "plugins",
+      title: "插件",
+      icon: "⚙",
+      component: (p) => <PluginsView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
     });
     registryRef.current = registry;
   }

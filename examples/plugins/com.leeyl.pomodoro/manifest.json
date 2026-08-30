@@ -1,0 +1,18 @@
+{
+  "id": "com.leeyl.pomodoro",
+  "name": "番茄钟",
+  "version": "0.1.0",
+  "entry": "main.js",
+  "description": "25 分钟专注番茄钟：KV 持久化、完成任务自动开始、Today 卡片 + 独立视图 + ⌘K 命令",
+  "permissions": {
+    "events": ["task.completed"]
+  },
+  "contributions": {
+    "today_cards": [{ "id": "card" }],
+    "views": [{ "id": "view", "title": "番茄钟" }],
+    "commands": [
+      { "id": "start", "title": "开始一个番茄钟" },
+      { "id": "stop", "title": "放弃当前番茄钟" }
+    ]
+  }
+}
