@@ -1,0 +1,74 @@
+import { useState } from "react";
+import { api } from "../api";
+import { localToday } from "../hooks";
+
+type Target = "today" | "inbox";
+
+const TARGET_META: Record<Target, { label: string; hint: string }> = {
+  today: { label: "今天任务", hint: "⏎ 创建为今天到期的任务" },
+  inbox: { label: "收件箱", hint: "⏎ 收集到收件箱，之后再整理" },
+};
+
+/**
+ * Today 页 Bento 的快速捕捉卡：一条输入，两个去向（今天到期任务 / 收件箱）。
+ * Enter 即提交，不打断当前浏览。
+ */
+export default function QuickCapture({
+  onChanged,
+  className = "",
+}: {
+  onChanged: () => void;
+  className?: string;
+}) {
+  const [text, setText] = useState("");
+  const [target, setTarget] = useState<Target>("today");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    const t = text.trim();
+    if (!t || busy) return;
+    setBusy(true);
+    try {
+      if (target === "today") {
+        await api.createTask(t, localToday());
+      } else {
+        await api.addInboxItem(t);
+      }
+      setText("");
+      onChanged();
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={`flex flex-col ${className}`}>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">快速捕捉</h2>
+        <div className="flex rounded-lg bg-hover p-0.5">
+          {(Object.keys(TARGET_META) as Target[]).map((k) => (
+            <button
+              key={k}
+              onClick={() => setTarget(k)}
+              className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
+                target === k ? "bg-surface font-medium text-ink shadow-sm" : "text-ink2 hover:text-ink"
+              }`}
+            >
+              {TARGET_META[k].label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        placeholder="一个想法、一条待办、一个链接…"
+        className="mt-3 w-full rounded-xl border border-line bg-surface2 px-3 py-2 text-sm outline-none placeholder:text-ink3 focus:border-accent/50"
+      />
+      <div className="mt-2 text-[11px] text-ink3">{TARGET_META[target].hint}</div>
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 /**
  * 语义化 Badge：tone 映射语义 token（accent/danger/warn/info/violet），
@@ -24,6 +24,25 @@ export function Badge({ children, tone = "slate" }: { children: ReactNode; tone?
 
 export type BadgeTone = "slate" | "green" | "amber" | "red" | "blue" | "violet";
 
+/** 统一按钮：primary=主操作，violet=收件箱收集，ghost=次级操作。 */
+export function Button({
+  variant = "primary",
+  className = "",
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "violet" | "ghost" }) {
+  const variants = {
+    primary: "bg-accent text-onaccent hover:bg-accent/90",
+    violet: "bg-violet text-onaccent hover:bg-violet/90",
+    ghost: "border border-line text-ink2 hover:bg-hover hover:text-ink",
+  };
+  return (
+    <button
+      className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${variants[variant]} ${className}`}
+      {...rest}
+    />
+  );
+}
+
 export function SectionTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <div className="mb-2 mt-6 flex items-center justify-between first:mt-0">
@@ -33,19 +52,121 @@ export function SectionTitle({ children, right }: { children: ReactNode; right?:
   );
 }
 
-export function Empty({ text }: { text: string }) {
+/** 子页统一页头：标题 + 可选数量徽标 + 描述 + 右侧主操作。 */
+export function PageHeader({
+  title,
+  count,
+  desc,
+  actions,
+}: {
+  title: string;
+  count?: number;
+  desc?: string;
+  actions?: ReactNode;
+}) {
   return (
-    <div className="rounded-lg border border-dashed border-line py-8 text-center text-sm text-ink3">
-      {text}
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-xl font-semibold text-ink">{title}</h1>
+          {count !== undefined && (
+            <span className="text-sm tabular-nums text-ink3">{count}</span>
+          )}
+        </div>
+        {desc && <p className="mt-1 text-xs text-ink2">{desc}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
   );
 }
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+/** 空态：大 glyph + 一句引导 + 可选主按钮。 */
+export function Empty({
+  text,
+  glyph,
+  action,
+}: {
+  text: string;
+  glyph?: ReactNode;
+  action?: ReactNode;
+}) {
   return (
-    <div className={`rounded-2xl border border-line bg-surface shadow-card ${className}`}>
+    <div className="flex flex-col items-center gap-2.5 rounded-2xl border border-dashed border-line py-10 text-center">
+      {glyph && <div className="text-2xl text-ink3">{glyph}</div>}
+      <div className="text-sm text-ink3">{text}</div>
+      {action}
+    </div>
+  );
+}
+
+export function Card({
+  children,
+  className = "",
+  hoverable = false,
+}: {
+  children: ReactNode;
+  className?: string;
+  hoverable?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border border-line bg-surface shadow-card ${
+        hoverable
+          ? "transition-all duration-150 hover:-translate-y-px hover:shadow-lg"
+          : ""
+      } ${className}`}
+    >
       {children}
     </div>
+  );
+}
+
+/** 今日完成率圆环（SVG，随主题 token 变色）。value ∈ [0,1]。 */
+export function ProgressRing({
+  value,
+  size = 56,
+  stroke = 5,
+  className = "",
+}: {
+  value: number;
+  size?: number;
+  stroke?: number;
+  className?: string;
+}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.min(1, Math.max(0, value));
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className={className}
+      role="img"
+      aria-label={`完成率 ${Math.round(clamped * 100)}%`}
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="var(--line)"
+        strokeWidth={stroke}
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={c * (1 - clamped)}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        className="transition-[stroke-dashoffset] duration-500"
+      />
+    </svg>
   );
 }
 

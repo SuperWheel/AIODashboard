@@ -30,6 +30,13 @@ export function fmtDateTime(iso?: string | null): string {
   return `${d.getMonth() + 1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 本地时区的今天（YYYY-MM-DD），给 task due 等日期参数用；不用 UTC（跨午夜会偏一天）。 */
+export function localToday(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function isOverdue(dueAt?: string | null, status?: string): boolean {
   if (!dueAt || status === "done") return false;
   return new Date(dueAt).getTime() < Date.now();
