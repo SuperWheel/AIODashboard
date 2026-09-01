@@ -14,5 +14,7 @@ Plan 级任务（新增 CLI 子命令 / 新增视图 / 单个 command / 跨步�
 
 | 文档 | 状态 | 提出日期 | 摘要 |
 |---|---|---|---|
+| [2026-08-31-task-wall-modes.md](2026-08-31-task-wall-modes.md) | 已完成 | 2026-08-31 | 任务卡片墙双视图：均衡发牌混排（贪心最矮列）+ 类型分区，localStorage 记忆 |
+| [2026-08-31-bugfix-batch.md](2026-08-31-bugfix-batch.md) | 已完成 | 2026-08-31 | 全量 bug 排查批修：账本错账/Tauri 参数契约/插件事件接线/快照缺口 |
 | [2026-08-30-statcard-day-delta.md](2026-08-30-statcard-day-delta.md) | 提案 | 2026-08-30 | StatCard 接线「环比昨日」箭头，需 core 补昨日统计 |
-| [2026-08-30-project-snapshot-refresh.md](2026-08-30-project-snapshot-refresh.md) | 提案 | 2026-08-30 | project create/archive/delete 补刷 Widget Snapshot（红线 4 缺口） |
+| [2026-08-30-project-snapshot-refresh.md](2026-08-30-project-snapshot-refresh.md) | 已完成 | 2026-08-30 | project create/archive/delete 补刷 Widget Snapshot（红线 4 缺口） |
