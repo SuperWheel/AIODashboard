@@ -103,7 +103,7 @@ fn chain_core_create_then_cli_read_json() {
     assert_eq!(code, 0);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], true);
-    assert_eq!(v["meta"]["schema_version"], "3");
+    assert_eq!(v["meta"]["schema_version"], "4");
     let items = v["data"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["id"], task.id.as_str());
@@ -244,7 +244,7 @@ fn ai_error_protocol_not_found_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "3");
+    assert_eq!(v["meta"]["schema_version"], "4");
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn plugin_unknown_id_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "3");
+    assert_eq!(v["meta"]["schema_version"], "4");
 }
 
 /// T4：manifest 非法的目录在 list 中以 error 呈现，不影响整体。
@@ -420,7 +420,7 @@ fn chain_task_recurrence() {
     };
     let off_day = (wd % 7) + 1; // 必不等于今天
 
-    // 1) weekly 含今天：创建即 JSON 带 recurrence，schema_version=3，打卡成功
+    // 1) weekly 含今天：创建即 JSON 带 recurrence，schema_version=4，打卡成功
     let (code, out) = env.cli(&[
         "task",
         "create",
@@ -435,7 +435,7 @@ fn chain_task_recurrence() {
     assert_eq!(code, 0, "{out}");
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["data"]["recurrence"]["kind"], "weekly");
-    assert_eq!(v["meta"]["schema_version"], "3");
+    assert_eq!(v["meta"]["schema_version"], "4");
     let id_on = v["data"]["id"].as_str().unwrap().to_string();
     let (code, out) = env.cli(&["task", "checkin", &id_on, "--json"]);
     assert_eq!(code, 0, "{out}");

@@ -27,7 +27,7 @@ pub struct HeatmapDay {
     pub is_today: bool,
     /// 0=周一 … 6=周日
     pub weekday_index: i64,
-    /// 年视图周列索引（以 1 月 1 日所在周周一为第 0 列）
+    /// 周列索引：窗口起点（周一）为第 0 列
     pub week_index: i64,
     pub month: i64,
 }
@@ -50,7 +50,7 @@ pub struct PeriodOverview {
     pub anchor_day: String,
     pub start_day: String,
     pub end_day: String,
-    /// 年热力图前置空格数（1 月 1 日的周几索引，周一=0）
+    /// 滚动年窗口起点为周一，前置空格恒 0（保留字段兼容）
     pub leading_empty_count: i64,
     pub days: Vec<HeatmapDay>,
     pub summary: PeriodSummary,
@@ -61,7 +61,8 @@ fn period_range(kind: &str, anchor: &str) -> CoreResult<(String, String)> {
     match kind {
         "week" => ld::week_range(anchor),
         "month" => ld::month_range(anchor),
-        "year" => ld::year_range(anchor),
+        // 年 = 滚动 53 周窗口（右端为本周），协议 v4 起不再是日历年
+        "year" => ld::rolling_year_range(anchor),
         _ => Err(crate::CoreError::Validation(format!(
             "无效的 period: {kind}（week|month|year）"
         ))),
@@ -114,7 +115,7 @@ fn build_days(
         };
         days.push(HeatmapDay {
             weekday_index: ld::weekday_index(&day)?,
-            week_index: ld::year_week_index(&day)?,
+            week_index: ld::rolling_week_index(from, &day)?,
             month: ld::parse_day(&day)?.month() as i64,
             is_today: day == *today,
             logical_day: day,
@@ -216,17 +217,12 @@ pub fn task_period_overview(
         .collect();
     let summary = summarize(&inputs);
     let buckets = build_buckets(kind, &days);
-    let leading = if kind == "year" {
-        ld::year_leading_empty(&anchor)?
-    } else {
-        0
-    };
     Ok(PeriodOverview {
         kind: kind.to_string(),
         anchor_day: anchor,
         start_day: start,
         end_day: end,
-        leading_empty_count: leading,
+        leading_empty_count: 0,
         days,
         summary,
         buckets,
@@ -343,7 +339,7 @@ fn aggregate_days(
     for day in ld::days_inclusive(start, end)? {
         let is_today = day == *today;
         let weekday_index = ld::weekday_index(&day)?;
-        let week_index = ld::year_week_index(&day)?;
+        let week_index = ld::rolling_week_index(start, &day)?;
         let month = ld::parse_day(&day)?.month() as i64;
 
         if day.as_str() > today {
@@ -391,7 +387,7 @@ fn aggregate_days(
     Ok(days)
 }
 
-/// 重要日综合热力图（按年）。逐日读取当时真实生效的活动/目标/归属区间。
+/// 重要日综合热力图（滚动年窗口）。逐日读取当时真实生效的活动/目标/归属区间。
 pub fn library_year_heatmap(
     conn: &Connection,
     library_id: &str,
@@ -403,7 +399,7 @@ pub fn library_year_heatmap(
         .map(|s| s.to_string())
         .unwrap_or_else(|| today.clone());
     let anchor_date = ld::parse_day(&anchor)?;
-    let (start, end) = ld::year_range(&anchor)?;
+    let (start, end) = ld::rolling_year_range(&anchor)?;
 
     // 预取：年内出现过的归属区间
     let memberships = period_repo::library_memberships_in_range(conn, &lib.id, &start, &end)?;
@@ -435,7 +431,7 @@ pub fn library_year_heatmap(
     Ok(LibraryYearHeatmap {
         library_id: lib.id,
         year: anchor_date.year() as i64,
-        leading_empty_count: ld::year_leading_empty(&anchor)?,
+        leading_empty_count: 0,
         start_day: start,
         end_day: end,
         days,
@@ -444,6 +440,7 @@ pub fn library_year_heatmap(
 
 /// 全局年度综合热力图：聚合所有任务（含已归档——归档只关闭活动区间，
 /// 历史日口径由区间决定，不回写）。聚合口径与重要日综合热力图一致。
+/// 窗口 = 滚动 53 周（右端为本周，跨年含上一年尾部）。
 pub fn global_year_heatmap(
     conn: &Connection,
     anchor_day: Option<&str>,
@@ -453,7 +450,7 @@ pub fn global_year_heatmap(
         .map(|s| s.to_string())
         .unwrap_or_else(|| today.clone());
     let anchor_date = ld::parse_day(&anchor)?;
-    let (start, end) = ld::year_range(&anchor)?;
+    let (start, end) = ld::rolling_year_range(&anchor)?;
 
     let tasks = task_repo::list(
         conn,
@@ -468,7 +465,7 @@ pub fn global_year_heatmap(
 
     Ok(GlobalYearHeatmap {
         year: anchor_date.year() as i64,
-        leading_empty_count: ld::year_leading_empty(&anchor)?,
+        leading_empty_count: 0,
         start_day: start,
         end_day: end,
         days,

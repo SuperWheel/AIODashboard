@@ -256,11 +256,22 @@ fn week_overview_summary() {
 }
 
 #[test]
-fn year_overview_days_count() {
+fn year_overview_rolling_53_weeks() {
     let c = conn();
     let t = make_task(&c, 1);
     let ov = core::overview_service::task_period_overview(&c, &t.id, "year", None).unwrap();
-    assert!(ov.days.len() == 365 || ov.days.len() == 366);
+    // 滚动年窗口：恒 53 周（371 天），起点周一（无前置空格），末日为本周日
+    assert_eq!(ov.days.len(), 371);
+    assert_eq!(ov.leading_empty_count, 0);
+    assert_eq!(ov.days[0].weekday_index, 0);
+    assert_eq!(ov.days[370].weekday_index, 6);
+    let today_s = today();
+    let today_cell = ov.days.iter().find(|d| d.is_today).unwrap();
+    // 今天落在最后一列（右端列为本周）
+    assert_eq!(today_cell.week_index, 52);
+    // 窗口跨年：起点早于本年至今约 52 周
+    assert!(ov.start_day < today_s);
+    assert!(ov.end_day >= today_s);
 }
 
 // ---------- 重要日 ----------

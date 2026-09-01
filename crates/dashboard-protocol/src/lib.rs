@@ -10,10 +10,13 @@
 //!   新增 checkin/library 命令组、complete/reopen 语义重映射（deprecated）
 //! - "3"：任务循环规则（task-recurrence，变更包 004）——Task 增 recurrence 字段、
 //!   task create/update 增 --recurrence/--weekdays、SCHEMA_V4 目标区间加循环列
+//! - "4"：年总览改滚动窗口（rolling-year-heatmap，变更包 005）——`task overview --period year`
+//!   与 library 热力图从日历年改为滚动 53 周（右端为本周），week_index 以窗口起点为第 0 列，
+//!   leading_empty_count 恒 0
 
 use serde::Serialize;
 
-pub const SCHEMA_VERSION: &str = "3";
+pub const SCHEMA_VERSION: &str = "4";
 
 /// 标准 Exit Code。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
