@@ -5,7 +5,7 @@ import type { LibraryYearHeatmap, TaskDayView } from "../types";
 import { taskColor } from "../taskVisual";
 import CheckinRow from "./CheckinRow";
 import { RateHeatmapGrid } from "./Heatmap";
-import { Button, Card, Empty } from "./ui";
+import { Button, Card, Empty, FieldSelect } from "./ui";
 import { toastError } from "./DialogHost";
 
 type ArchiveMode = "keep" | "detach" | "move_to";
@@ -168,16 +168,12 @@ export default function LibraryDetailView({
                 </label>
               ))}
               {mode === "move_to" && (
-                <select
-                  value={moveTo}
-                  onChange={(e) => setMoveTo(e.target.value)}
-                  className="w-full rounded-lg border border-line bg-surface2 px-2.5 py-1.5 text-sm outline-none"
-                >
+                <FieldSelect value={moveTo} onChange={setMoveTo}>
                   <option value="">选择目标重要日…</option>
                   {allLibs.map((l) => (
                     <option key={l.id} value={l.id}>{l.title}</option>
                   ))}
-                </select>
+                </FieldSelect>
               )}
             </div>
             <div className="mt-4 flex justify-end gap-2">

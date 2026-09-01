@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { TASK_COLORS } from "../taskVisual";
 
 /**
  * 语义化 Badge：tone 映射语义 token（accent/danger/warn/info/violet），
@@ -24,7 +25,8 @@ export function Badge({ children, tone = "slate" }: { children: ReactNode; tone?
 
 export type BadgeTone = "slate" | "green" | "amber" | "red" | "blue" | "violet";
 
-/** 统一按钮：primary=主操作，violet=收件箱收集，danger=破坏性操作，ghost=次级操作。 */
+/** 统一按钮：primary=主操作，violet=收件箱收集，danger=破坏性操作，ghost=次级操作。
+ *  圆角矩形，高度 h-9（py-1.5 + text-sm），全产品一致。 */
 export function Button({
   variant = "primary",
   className = "",
@@ -40,9 +42,129 @@ export function Button({
   };
   return (
     <button
-      className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${variants[variant]} ${className}`}
+      className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 ${variants[variant]} ${className}`}
       {...rest}
     />
+  );
+}
+
+/** 表单输入框统一规格：h-9、圆角矩形、surface2 底。 */
+export const inputCls =
+  "h-9 w-full rounded-lg border border-line bg-surface2 px-2.5 text-sm outline-none transition-colors focus:border-accent/50 disabled:opacity-50";
+
+/** 下拉选择：与输入框同高同底（h-9），右侧自带 ▾（native 箭头隐藏）。 */
+export function FieldSelect({
+  value,
+  onChange,
+  disabled,
+  className = "",
+  children,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`relative ${className}`}>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${inputCls} cursor-pointer appearance-none pr-7`}
+      >
+        {children}
+      </select>
+      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-ink3">
+        ▾
+      </span>
+    </div>
+  );
+}
+
+/** 常用 emoji 预设（习惯/生活/学习场景），显式数组避免多码点表情被拆分。 */
+const EMOJI_PRESETS: string[] = [
+  "💧", "🏃", "🏋️", "🧘", "🚶", "🚴", "🏊", "⚽",
+  "🏀", "📖", "✍️", "📝", "📚", "🎓", "💻", "🧠",
+  "🎨", "🎵", "🎸", "🎮", "🎬", "🎧", "📈", "💰",
+  "🍎", "🥗", "☕", "🍵", "🥛", "🍳", "😴", "🛏️",
+  "🌅", "🌙", "🦷", "🚿", "💊", "🧴", "🧹", "🧺",
+  "🐶", "🐱", "🌱", "🪴", "🌸", "🍀", "❤️", "🔥",
+  "⭐", "🎯", "🏆", "📅", "⏰", "✈️", "🚗", "🏠",
+  "💼", "📞", "✉️", "🗂️", "✅", "💡", "🛒", "📦",
+];
+
+/** Emoji 选择器：点击 😀 弹出常用表情网格（圆角矩形弹层），点选即填；可直接打字补充。 */
+export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="选择表情"
+        className="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface2 text-base transition-colors hover:bg-hover"
+      >
+        😀
+      </button>
+      {open && (
+        <div className="absolute left-0 top-10 z-30 w-72 rounded-xl border border-line bg-surface p-2 shadow-lg">
+          <div className="grid grid-cols-8 gap-0.5">
+            {EMOJI_PRESETS.map((e) => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => {
+                  onPick(e);
+                  setOpen(false);
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-lg transition-colors hover:bg-hover"
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 主题色板：圆角矩形色块网格，选中双圈高亮。 */
+export function ColorSwatches({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {TASK_COLORS.map((c) => (
+        <button
+          key={c.hex}
+          type="button"
+          title={c.name}
+          onClick={() => onChange(c.hex)}
+          className="h-7 w-7 rounded-lg transition-transform hover:scale-110"
+          style={{
+            background: c.hex,
+            boxShadow:
+              value === c.hex ? `0 0 0 2px var(--surface), 0 0 0 4px ${c.hex}` : undefined,
+          }}
+        />
+      ))}
+    </div>
   );
 }
 

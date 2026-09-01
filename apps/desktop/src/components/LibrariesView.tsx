@@ -3,7 +3,7 @@ import { api } from "../api";
 import { localToday, usePolling } from "../hooks";
 import type { LibraryListItem } from "../types";
 import LibraryDetailView from "./LibraryDetailView";
-import { Button, Card, Empty, PageHeader } from "./ui";
+import { Button, Card, ColorSwatches, EmojiPicker, Empty, FieldSelect, inputCls, PageHeader } from "./ui";
 import { confirmDialog, toastError } from "./DialogHost";
 import { taskColor, TASK_COLORS } from "../taskVisual";
 
@@ -57,8 +57,7 @@ function LibraryEditor({
     }
   };
 
-  const fieldCls =
-    "w-full rounded-lg border border-line bg-surface2 px-2.5 py-1.5 text-sm outline-none focus:border-accent/50";
+  const fieldCls = inputCls;
   const labelCls = "mb-1 block text-xs text-ink2";
 
   return (
@@ -68,10 +67,19 @@ function LibraryEditor({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-sm font-semibold text-ink">{library ? "编辑重要日" : "新建重要日"}</h2>
-        <div className="mt-4 grid grid-cols-[72px_1fr] gap-3">
+        <div className="mt-4 grid grid-cols-[132px_1fr] gap-3">
           <div>
             <label className={labelCls}>图标</label>
-            <input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} placeholder="📅" className={`${fieldCls} text-center text-lg`} />
+            <div className="flex gap-1.5">
+              <input
+                value={icon}
+                onChange={(e) => setIcon(e.target.value)}
+                maxLength={4}
+                placeholder="📅"
+                className={`${fieldCls} w-0 flex-1 px-1 text-center text-lg`}
+              />
+              <EmojiPicker onPick={setIcon} />
+            </div>
           </div>
           <div>
             <label className={labelCls}>标题</label>
@@ -81,10 +89,10 @@ function LibraryEditor({
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>类型</label>
-            <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className={fieldCls} disabled={!!library}>
+            <FieldSelect value={kind} disabled={!!library} onChange={(v) => setKind(v as typeof kind)}>
               <option value="countdown">倒计时日</option>
               <option value="anniversary">纪念日</option>
-            </select>
+            </FieldSelect>
           </div>
           <div>
             <label className={labelCls}>锚点日期</label>
@@ -93,20 +101,7 @@ function LibraryEditor({
         </div>
         <div className="mt-3">
           <label className={labelCls}>主题色</label>
-          <div className="flex gap-2">
-            {TASK_COLORS.map((c) => (
-              <button
-                key={c.hex}
-                title={c.name}
-                onClick={() => setColor(c.hex)}
-                className="h-7 w-7 rounded-lg transition-transform hover:scale-110"
-                style={{
-                  background: c.hex,
-                  boxShadow: color === c.hex ? `0 0 0 2px var(--surface), 0 0 0 4px ${c.hex}` : undefined,
-                }}
-              />
-            ))}
-          </div>
+          <ColorSwatches value={color} onChange={setColor} />
         </div>
         <div className="mt-3">
           <label className={labelCls}>备注</label>

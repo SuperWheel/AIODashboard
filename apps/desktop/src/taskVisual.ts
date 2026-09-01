@@ -8,11 +8,20 @@ import type { HeatmapState } from "./types";
 
 export const TASK_COLORS: { hex: string; name: string }[] = [
   { hex: "#4A90E2", name: "海蓝" },
-  { hex: "#38A38A", name: "青绿" },
-  { hex: "#69A84F", name: "草绿" },
-  { hex: "#E49345", name: "暖橙" },
-  { hex: "#D96767", name: "珊瑚" },
+  { hex: "#38BDF8", name: "天青" },
+  { hex: "#6366F1", name: "靛蓝" },
   { hex: "#8067C8", name: "紫罗兰" },
+  { hex: "#A855F7", name: "亮紫" },
+  { hex: "#EC4899", name: "玫粉" },
+  { hex: "#D96767", name: "珊瑚" },
+  { hex: "#EF4444", name: "朱红" },
+  { hex: "#E49345", name: "暖橙" },
+  { hex: "#F5B942", name: "杏黄" },
+  { hex: "#69A84F", name: "草绿" },
+  { hex: "#10B981", name: "翠绿" },
+  { hex: "#38A38A", name: "青绿" },
+  { hex: "#92400E", name: "咖啡" },
+  { hex: "#64748B", name: "岩灰" },
 ];
 
 export function taskColor(hex: string): string {

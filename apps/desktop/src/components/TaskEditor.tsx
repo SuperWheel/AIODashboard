@@ -3,7 +3,7 @@ import { api } from "../api";
 import type { CardStyle, LibraryListItem, ProjectWithStats, Recurrence, Task } from "../types";
 import { defaultRecurrence } from "../types";
 import { TASK_COLORS } from "../taskVisual";
-import { Button } from "./ui";
+import { Button, ColorSwatches, EmojiPicker, FieldSelect, inputCls } from "./ui";
 import { confirmDialog, toastError } from "./DialogHost";
 
 const STYLES: { key: CardStyle; label: string }[] = [
@@ -145,8 +145,7 @@ export default function TaskEditor({
     }
   };
 
-  const fieldCls =
-    "w-full rounded-lg border border-line bg-surface2 px-2.5 py-1.5 text-sm outline-none focus:border-accent/50";
+  const fieldCls = inputCls;
   const labelCls = "mb-1 block text-xs text-ink2";
 
   return (
@@ -160,16 +159,19 @@ export default function TaskEditor({
       >
         <h2 className="text-sm font-semibold text-ink">{task ? "编辑任务" : "新建任务"}</h2>
 
-        <div className="mt-4 grid grid-cols-[72px_1fr] gap-3">
+        <div className="mt-4 grid grid-cols-[132px_1fr] gap-3">
           <div>
             <label className={labelCls}>图标</label>
-            <input
-              value={icon}
-              onChange={(e) => setIcon(e.target.value)}
-              placeholder="✓"
-              maxLength={4}
-              className={`${fieldCls} text-center text-lg`}
-            />
+            <div className="flex gap-1.5">
+              <input
+                value={icon}
+                onChange={(e) => setIcon(e.target.value)}
+                placeholder="✓"
+                maxLength={4}
+                className={`${fieldCls} w-0 flex-1 px-1 text-center text-lg`}
+              />
+              <EmojiPicker onPick={setIcon} />
+            </div>
           </div>
           <div>
             <label className={labelCls}>标题</label>
@@ -186,21 +188,7 @@ export default function TaskEditor({
 
         <div className="mt-3">
           <label className={labelCls}>主题色</label>
-          <div className="flex gap-2">
-            {TASK_COLORS.map((c) => (
-              <button
-                key={c.hex}
-                title={c.name}
-                onClick={() => setColor(c.hex)}
-                className="h-7 w-7 rounded-lg transition-transform hover:scale-110"
-                style={{
-                  background: c.hex,
-                  boxShadow:
-                    color === c.hex ? `0 0 0 2px var(--surface), 0 0 0 4px ${c.hex}` : undefined,
-                }}
-              />
-            ))}
-          </div>
+          <ColorSwatches value={color} onChange={setColor} />
         </div>
 
         <div className="mt-3 grid grid-cols-3 gap-3">
@@ -227,42 +215,37 @@ export default function TaskEditor({
           </div>
           <div>
             <label className={labelCls}>卡片样式</label>
-            <select
-              value={cardStyle}
-              onChange={(e) => setCardStyle(e.target.value as CardStyle)}
-              className={fieldCls}
-            >
+            <FieldSelect value={cardStyle} onChange={(v) => setCardStyle(v as CardStyle)}>
               {STYLES.map((s) => (
                 <option key={s.key} value={s.key}>
                   {s.label}
                 </option>
               ))}
-            </select>
+            </FieldSelect>
           </div>
         </div>
 
         <div className="mt-3">
           <label className={labelCls}>循环</label>
           <div className="flex items-center gap-2">
-            <select
+            <FieldSelect
               value={recurrence.kind}
               disabled={!dayLoaded}
-              onChange={(e) => {
-                const kind = e.target.value;
+              className="w-28 shrink-0"
+              onChange={(kind) =>
                 setRecurrence(
                   kind === "weekly"
                     ? { kind: "weekly", weekdays: [isoWeekdayToday] }
                     : ({ kind } as Recurrence),
-                );
-              }}
-              className={`${fieldCls} w-28`}
+                )
+              }
             >
               <option value="daily">每天</option>
               <option value="weekly">每周</option>
               <option value="monthly">每月</option>
               <option value="yearly">每年</option>
               <option value="once">一次性</option>
-            </select>
+            </FieldSelect>
             {recurrence.kind === "weekly" && (
               <div className="flex gap-1">
                 {["一", "二", "三", "四", "五", "六", "日"].map((label, i) => {
@@ -274,7 +257,7 @@ export default function TaskEditor({
                       type="button"
                       title={`每周${label}`}
                       onClick={() => toggleWeekday(w)}
-                      className={`h-7 w-7 rounded-lg border text-xs transition-colors ${
+                      className={`h-8 w-8 rounded-lg border text-xs transition-colors ${
                         on
                           ? "border-accent/40 bg-accent/10 font-medium text-accent"
                           : "border-line text-ink3 hover:bg-hover hover:text-ink"
@@ -292,34 +275,25 @@ export default function TaskEditor({
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>所属项目</label>
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className={fieldCls}
-            >
+            <FieldSelect value={projectId} onChange={setProjectId}>
               <option value="">（无）</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
-            </select>
+            </FieldSelect>
           </div>
           <div>
             <label className={labelCls}>重要日</label>
-            <select
-              value={libraryId}
-              disabled={!dayLoaded}
-              onChange={(e) => setLibraryId(e.target.value)}
-              className={fieldCls}
-            >
+            <FieldSelect value={libraryId} disabled={!dayLoaded} onChange={setLibraryId}>
               <option value="">独立任务</option>
               {libraries.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.title}
                 </option>
               ))}
-            </select>
+            </FieldSelect>
           </div>
         </div>
 
