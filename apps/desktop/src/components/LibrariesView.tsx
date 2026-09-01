@@ -3,7 +3,7 @@ import { api } from "../api";
 import { localToday, usePolling } from "../hooks";
 import type { LibraryListItem } from "../types";
 import LibraryDetailView from "./LibraryDetailView";
-import { Button, Card, ColorSwatches, EmojiPicker, Empty, FieldSelect, inputCls, PageHeader } from "./ui";
+import { Button, Card, ColorSwatches, DateField, EmojiPicker, Empty, FieldSelect, inputCls, PageHeader } from "./ui";
 import { confirmDialog, toastError } from "./DialogHost";
 import { taskColor, TASK_COLORS } from "../taskVisual";
 
@@ -96,7 +96,7 @@ function LibraryEditor({
           </div>
           <div>
             <label className={labelCls}>锚点日期</label>
-            <input type="date" value={anchor} onChange={(e) => setAnchor(e.target.value)} className={fieldCls} />
+            <DateField value={anchor} onChange={setAnchor} />
           </div>
         </div>
         <div className="mt-3">

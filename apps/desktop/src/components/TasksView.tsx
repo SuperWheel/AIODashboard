@@ -5,7 +5,7 @@ import type { CardStyle, Task, TaskDayView } from "../types";
 import TaskCard from "./TaskCard";
 import TaskDetailView from "./TaskDetailView";
 import TaskEditor from "./TaskEditor";
-import { Button, Empty, PageHeader } from "./ui";
+import { Button, DatePickerPanel, Empty, PageHeader } from "./ui";
 import { toastError } from "./DialogHost";
 
 type Tab = "active" | "archived";
@@ -62,18 +62,13 @@ function DayNavigator({ day, onChange }: { day: string; onChange: (d: string) =>
             {isToday ? " · 今天" : ""}
           </button>
           {open && (
-            <div className="absolute left-1/2 top-8 z-30 -translate-x-1/2 rounded-xl border border-line bg-surface p-2 shadow-lg">
-              <input
-                type="date"
+            <div className="absolute left-1/2 top-8 z-30 -translate-x-1/2">
+              <DatePickerPanel
                 value={day}
-                autoFocus
-                onChange={(e) => {
-                  if (e.target.value) {
-                    onChange(e.target.value);
-                    setOpen(false);
-                  }
+                onSelect={(d) => {
+                  onChange(d);
+                  setOpen(false);
                 }}
-                className="rounded-lg border border-line bg-surface2 px-2 py-1 text-sm text-ink outline-none focus:border-accent/50"
               />
             </div>
           )}

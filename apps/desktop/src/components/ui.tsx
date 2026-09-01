@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { TASK_COLORS } from "../taskVisual";
+import { localToday } from "../hooks";
 
 /**
  * 语义化 Badge：tone 映射语义 token（accent/danger/warn/info/violet），
@@ -134,6 +135,228 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
               </button>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- 分层日期选择 ----------------
+
+const CN_WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"] as const;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * 分层日期选择面板：日 → 月 → 年三层（点标题逐级上升，点格子逐级下降）。
+ * 圆角矩形格子；今天 = 主题色文字，当前选中 = 主题色填充；页脚「今天」快捷键。
+ */
+export function DatePickerPanel({
+  value,
+  onSelect,
+}: {
+  /** YYYY-MM-DD */
+  value: string;
+  onSelect: (day: string) => void;
+}) {
+  const today = localToday();
+  const parse = (s: string) => {
+    const [y, m] = s.split("-").map(Number);
+    return { y: y || 1970, m: (m || 1) - 1 };
+  };
+  const init = parse(value || today);
+  const cur = parse(today);
+  const [level, setLevel] = useState<"day" | "month" | "year">("day");
+  const [vy, setVy] = useState(init.y);
+  const [vm, setVm] = useState(init.m);
+
+  const step = (n: number) => {
+    if (level === "day") {
+      const d = new Date(vy, vm + n, 1);
+      setVy(d.getFullYear());
+      setVm(d.getMonth());
+    } else if (level === "month") {
+      setVy(vy + n);
+    } else {
+      setVy(vy + n * 12);
+    }
+  };
+
+  const yearPageStart = Math.floor(vy / 12) * 12;
+  const title =
+    level === "day"
+      ? `${vy} 年 ${vm + 1} 月`
+      : level === "month"
+        ? `${vy} 年`
+        : `${yearPageStart} – ${yearPageStart + 11}`;
+
+  const cell =
+    "flex items-center justify-center rounded-lg text-xs transition-colors";
+
+  const dayGrid = () => {
+    const leading = (new Date(vy, vm, 1).getDay() + 6) % 7; // 周一在前
+    const count = new Date(vy, vm + 1, 0).getDate();
+    const cells: (string | null)[] = [...Array<null>(leading).fill(null)];
+    for (let d = 1; d <= count; d++) cells.push(`${vy}-${pad2(vm + 1)}-${pad2(d)}`);
+    return (
+      <div className="grid grid-cols-7 gap-0.5">
+        {CN_WEEKDAYS.map((w) => (
+          <div key={w} className="flex h-7 items-center justify-center text-[10px] text-ink3">
+            {w}
+          </div>
+        ))}
+        {cells.map((day, i) =>
+          day === null ? (
+            <div key={`e${i}`} />
+          ) : (
+            <button
+              key={day}
+              type="button"
+              onClick={() => onSelect(day)}
+              className={`${cell} h-8 tabular-nums ${
+                day === value
+                  ? "bg-accent font-medium text-onaccent"
+                  : day === today
+                    ? "font-semibold text-accent hover:bg-hover"
+                    : "text-ink2 hover:bg-hover hover:text-ink"
+              }`}
+            >
+              {Number(day.slice(8))}
+            </button>
+          ),
+        )}
+      </div>
+    );
+  };
+
+  const monthGrid = () => (
+    <div className="grid grid-cols-4 gap-1">
+      {Array.from({ length: 12 }, (_, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => {
+            setVm(i);
+            setLevel("day");
+          }}
+          className={`${cell} h-9 ${
+            vy === init.y && i === init.m
+              ? "bg-accent/10 font-medium text-accent"
+              : vy === cur.y && i === cur.m
+                ? "font-semibold text-accent hover:bg-hover"
+                : "text-ink2 hover:bg-hover hover:text-ink"
+          }`}
+        >
+          {i + 1}月
+        </button>
+      ))}
+    </div>
+  );
+
+  const yearGrid = () => (
+    <div className="grid grid-cols-4 gap-1">
+      {Array.from({ length: 12 }, (_, i) => yearPageStart + i).map((y) => (
+        <button
+          key={y}
+          type="button"
+          onClick={() => {
+            setVy(y);
+            setLevel("month");
+          }}
+          className={`${cell} h-9 tabular-nums ${
+            y === init.y
+              ? "bg-accent/10 font-medium text-accent"
+              : y === cur.y
+                ? "font-semibold text-accent hover:bg-hover"
+                : "text-ink2 hover:bg-hover hover:text-ink"
+          }`}
+        >
+          {y}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="w-64 rounded-xl border border-line bg-surface p-2.5 shadow-lg">
+      <div className="mb-1.5 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => step(-1)}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-xs text-ink2 transition-colors hover:bg-hover hover:text-ink"
+          title="上一页"
+        >
+          ◀
+        </button>
+        <button
+          type="button"
+          onClick={() => setLevel(level === "day" ? "month" : level === "month" ? "year" : "year")}
+          className="rounded-lg px-2 py-1 text-xs font-medium text-ink transition-colors hover:bg-hover"
+          title="点按切换：日 → 月 → 年"
+        >
+          {title}
+        </button>
+        <button
+          type="button"
+          onClick={() => step(1)}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-xs text-ink2 transition-colors hover:bg-hover hover:text-ink"
+          title="下一页"
+        >
+          ▶
+        </button>
+      </div>
+      {level === "day" ? dayGrid() : level === "month" ? monthGrid() : yearGrid()}
+      <div className="mt-1.5 flex justify-end border-t border-line pt-1.5">
+        <button
+          type="button"
+          onClick={() => onSelect(today)}
+          className="rounded-lg px-2 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
+        >
+          今天
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** 日期字段：外形 = 输入框（inputCls 等高），点击弹分层选择面板。 */
+export function DateField({
+  value,
+  onChange,
+  className = "",
+}: {
+  value: string;
+  onChange: (day: string) => void;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div className={`relative ${className}`} ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`${inputCls} flex items-center justify-between text-left`}
+      >
+        <span className="tabular-nums">{value}</span>
+        <span className="text-xs text-ink3">📅</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-10 z-30">
+          <DatePickerPanel
+            value={value}
+            onSelect={(d) => {
+              onChange(d);
+              setOpen(false);
+            }}
+          />
         </div>
       )}
     </div>
