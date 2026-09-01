@@ -5,6 +5,78 @@
 
 ---
 
+## [2026-09-01] 首页面板改造：年度热力图 + 今日双列填充卡 + 主库改名「重要日」
+
+**需求简述**：首页加任务热力图；今日任务列表太长改为双列卡片；主库上首页并改名「重要日」（用户拍板：主库与项目**保留两个实体**——项目=主题分类可挂笔记，重要日=时间战役带日期锚点/归属历史/综合热力图）。
+
+**模式**：Plan（`docs/plans/2026-09-01-home-heatmap-today-cards.md`）
+
+**关键决策**：
+- **全局热力图与主库综合热力图同一实现**：`overview_service` 抽出 `TaskDayFacts`（预取）/`task_day_contrib`（单日贡献）/`aggregate_days`（逐日聚合）三件套，主库口径=按当日真实归属过滤，全局口径=全量任务；聚合规则不变（单任务 min(actual/target,1)，日均=贡献和÷有效任务数）。归档任务历史保留（活动区间关闭只影响归档日起）。
+- **CLI 不动**：全局热力图只加 Tauri command，避免 AI 协议变更升 schema_version。
+- **渲染共享**：`RateHeatmapGrid` 抽进 `Heatmap.tsx`，主库详情与首页共用；首页用 `var(--accent)` 单色（聚合无任务色），点击跳任务页。热力图刷新挂在「打卡信号」（今日次数之和）上，不跟 4s 轮询空转。
+- **今日任务卡**：双列网格、圆角矩形、主题色从左按比例填充（完成整卡加深 80%）、末尾圆形勾选框（未完成空心/完成打钩）；点卡 +1、完成态点圈=撤销、hover 浮现 −、标题进详情；三组分组取消，位置快照保留 3s 冻结、重建时未完成在前已完成沉底、新任务追加末尾。
+- **改名只动人类可见文案**：UI/CLI help/README/architecture 中 主库→重要日；协议字段（library_id 等）、openspec 历史变更包、dev-log 历史条目不回改。
+
+**变更文件**：core（overview_service 重构+全局函数）、Tauri（+1 command）、前端（types/api/Heatmap/TodayView/新 TodayTaskCard/重要日卡/LibrariesView/LibraryDetailView/TaskEditor 文案）、CLI help 与测试文案、README/architecture、checkin.rs +2 链路测试。
+
+**验证结果**：✅ check.sh 全绿（fmt/clippy/全测/前端 build）；GUI 走查待用户（热力图 hover、填充比例与勾选态、双主题可读性）。
+
+**遗留**：今日任务卡数量无上限（任务极多时再考虑收起）；热力图无按日详情页（点击暂跳任务页）。
+
+---
+
+**需求简述**：任务可指定循环类型——每天、每周（可选星期几）、每月、每年、或一次性；一次性未完成自动顺延、完成即自动归档；每月/每年错位日（31 号遇小月、2/29 遇平年）clamp 至当月最后一天（三项均为用户拍板）。
+
+**模式**：Spec（变更包 openspec/changes/004-task-recurrence，四件套）
+
+**关键决策**（详见 design.md）：
+- **循环与卡片样式正交**：样式管统计展示口径，循环管哪天适用；规则存于目标区间行（`task_target_periods.recurrence`，SCHEMA_V4 加列），锚点=区间起始日，改规则=明天起新区间，历史口径不回写（与改目标同一机制）。
+- **once = 每日适用 + 完成即自动归档**：不引入"到期日"字段（顺延语义下无信息量）；checkin/complete 达标当次操作内归档，视图按归档前状态返回。
+- **适用性统一不变量**：活动区间 ∧ 目标区间 ∧ `Recurrence::matches`；非适用日不进 Today、打卡被拒（"今天不适用"）、热力图记 not_applicable。
+- **任务墙与 Today 数据源分离**：新 `wall_task_views`（全部 active 含不适用）供 TasksView，否则每周任务非适用日会整卡消失；Today 仍只看当日适用。
+- **V4 迁移单事务**：加列与 user_version=4 同 batch，堵住 003 的崩溃重跑窗口。
+- **协议 v3**：Task JSON 增 recurrence（core 读侧回填），CLI `--recurrence/--weekdays`（weekly 必须显式给非空星期集）。
+
+**变更文件**：六层全触——domain（Recurrence+matches+7 单测）、storage（SCHEMA_V4+period_repo）、core（checkin 适用性+自动归档 / task_service 输入与回填 / context wall+missed / overview 两处逐日判定）、protocol v3、CLI、Tauri（params+task_wall_views）、前端（types/api/TaskEditor 循环选择器/TaskCard 不适用态/TasksView 数据源）。
+
+**验证结果**：✅ check.sh 全绿（Rust 全测 + vitest 22 + 前端 build）；GUI 走查待用户（新建每周任务看非适用日行为、一次性完成自动归档）。
+
+**遗留**：插件 bridge `createTask` 暂不暴露循环参数（PLUGIN_API 已注记）；旧 dev-log 提到的"归档一次性任务被 undo 后保持归档态"为有意取舍。
+
+---
+
+## [2026-08-31] 全量 bug 排查批修：账本错账 / Tauri 参数契约 / 插件事件 / 快照缺口
+
+**需求简述**：用户要求排查现有功能 bug。三路并行审查（core / storage / 前端+Tauri）+ CLI 实测确认问题清单后批修。
+
+**模式**：Plan（`docs/plans/2026-08-31-bugfix-batch.md`）
+
+**关键决策**：
+- **undo 跨日语义**：补偿记录记入**被撤记录所在 logical_day**（而非今天）——允许跨日撤销且正确改写历史；配合 `day_count`/`counts_between` 的按日聚合口径。
+- **reopen 逐条补偿**：不再写无指向的批量负记录（它会让"未补偿"判定失守、账面可被挖负），改为对当日每条未补偿正向记录各写一条带指向的补偿（新增 repo 查询 `uncompensated_positives_on`）。
+- **complete_today 用未钳位 `day_sum`**：从真实账面差额算补足量，历史遗留的无指向负记录（旧版 reopen 写法）可被自愈补满。
+- **Tauri 嵌套参数加 `rename_all = "camelCase"`**：Tauri 只自动转换命令顶层参数名，嵌套 struct 走纯 serde——此前 GUI 传的 cardStyle/projectId/libraryId 全被静默丢弃。"移出项目"用显式 `clearProject` 标志表达（JSON null 无法表达 `Some(None)`）。
+- **插件领域事件接线**：EventBus 改模块单例，App 宿主与 api.ts 共用；写入成功后发射 `task.created/task.completed(达标时)/inbox.added/note.created`，插件经 bridge 写入同样触发；PLUGIN_API.md 补 payload 契约。
+- **插件重载先清 owner**：loadPlugin 在 onload 前 unregisterOwner/offOwner——StrictMode 双挂载或重新启用时的二次注册不再因 id 冲突抛错触发自动停用；跨 owner 冲突仍抛错（registry 语义不变）。
+- **TaskEditor dayLoaded 守卫**：今日视图查不到该任务（归档/今天不适用/加载竞态）时禁用目标与主库字段并跳过写回，杜绝默认值(1/空)静默重置。
+
+**变更文件**：core（checkin_service 三函数 + project_service/inbox_service 补 snapshot + context_service missed 过滤）、storage（completion_repo +day_sum/+uncompensated_positives_on、project_repo open_task_count 修正）、src-tauri（两个 Params struct）、前端（api.ts 契约+事件、TaskEditor/TodayView/TaskDetailView、events/loader/App）、测试（checkin.rs +3 回归）、文档（PLUGIN_API.md、两份 plan、本 log）。
+
+**验证结果**：✅ check.sh 全绿（Rust 全测 + vitest 22 + 前端 tsc/build）；GUI 真机走查待用户（新建任务带样式/主库、pomodoro 联动、归档项目后 widget 焦点）。
+
+**走查修复**（用户第一轮反馈，前端热更验证）：
+- 任务卡右键菜单被下方卡片遮挡 → 菜单打开时整卡提升 `z-30`（卡片互为兄弟节点，菜单自身 z-index 压不过 DOM 靠后的卡片）。
+- 任务完成后卡片立即跳到「已完成」组跳来跳去 → TodayView 引入分组快照：打卡操作后 3s 冻结窗口内不重排（数据照常实时刷新、新任务即时插入），之后的轮询刷新再按最新状态归组；重进视图即重建快照。
+- 任务卡片墙同行被最高卡拉伸 → 双视图（Plan：`2026-08-31-task-wall-modes.md`）：默认「均衡混排」按估算高度贪心发进最矮列（前缀稳定不跳动），另有「类型分区」视图，页头切换 + localStorage 记忆。
+- 走查二轮：①墙序与打卡状态解耦（按 created_at 升序，新任务固定在最末、落在较矮列底部，完成打卡不再引起卡片换位）；②高度档位校准（年卡实测约 670px，原估 560 偏低导致配列失衡）。
+- 走查三轮：①发牌档位按实际 DOM 精确校准（76/118/150/670——偏高的估算会让小卡多的列被误判为更高，新卡发错列）；②任务编辑器补「删除」按钮（danger 变体 + confirmDialog 二次确认，走 delete_task 级联删账本/区间），Button 组件新增 danger variant。
+- 走查四轮：估算档位仍不准（副标题换行/月卡行数等动态因素），发牌改为**实测高度驱动**——MeasuredCard 包裹每张卡，useLayoutEffect 首帧同步上报 offsetHeight + ResizeObserver 跟踪变化，发牌用实测值（估算仅作首帧兜底）。卡片高度与所在列无关，重排不引起高度变化，收敛无循环。
+
+**遗留**：StatCard 环比（Spec 级，TodayStats 需加字段）；create_task/checkin 事务化；V3 迁移版本号与建表同事务；core/cli 内 SQL 越界（红线 1）——均见 plan 文档结果记录。
+
+---
+
 ## [2026-08-30] Spec 003：打卡式任务 + 日期主库 + 四种任务卡片（任务模块整体替换）
 
 **需求简述**：把 PlanningDays 的任务卡片体系（日/周/月/年卡 + 打卡账本 + 日期主库）完整移植进 AIODashboard，替换 todo 式任务模块；设计语言以圆角矩形为主（+/- 同侧并排），贴合双主题 Bento。

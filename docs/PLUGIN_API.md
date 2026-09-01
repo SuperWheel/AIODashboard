@@ -49,6 +49,8 @@ AIODashboard 插件 = **加载进面板内部的 TS/JS 模块**（Obsidian 同�
 - `id`：反向域名（小写字母/数字/连字符，≥2 段），全局唯一
 - `permissions.network`：允许 `api.fetch` 访问的精确 host 列表
 - `permissions.events`：允许订阅的领域事件；当前支持 `task.completed` `task.created` `inbox.added` `note.created`（`panel.*` 无需声明）
+  - 事件 payload：`task.completed` / `task.created` → `{ id, title }`；`inbox.added` → `{ id, content }`；`note.created` → `{ id, title }`
+  - 触发时机：宿主在对应写入成功后发射（`task.completed` 在打卡使当日达到目标时触发；插件经 `api.core.checkinTask` 等写入同样会触发）
 - `permissions.cron`：允许注册的 cron 表达式（5 段）；由 Rust 侧驱动，后台不受 webview 定时器节流影响
 - 未知字段忽略（向前兼容）；两边校验（CLI 与面板）规则一致
 
@@ -75,7 +77,7 @@ export async function onunload() {
 | `api.react` | — | 宿主共享单实例 React：`createElement` `useState` `useEffect` … |
 | `api.core.today()` | 读 | `context today` 同源数据 |
 | `api.core.listTasks(scope?)` | 读 | `"all"/"active"/"archived"`（v2 起；旧 open/done/today/overdue 已移除） |
-| `api.core.createTask(title, target?)` | 写 | 创建打卡任务；target=每日目标（默认 1） |
+| `api.core.createTask(title, target?)` | 写 | 创建打卡任务；target=每日目标（默认 1）；循环固定 daily（带 recurrence 的重载后续按需扩展） |
 | `api.core.checkinTask(id)` | 写 | 打卡 +1（幂等账本） |
 | `api.core.archiveTask(id)` | 写 | 归档任务（停止打卡，历史保留） |
 | `api.core.deleteTask(id)` | 写 | |
