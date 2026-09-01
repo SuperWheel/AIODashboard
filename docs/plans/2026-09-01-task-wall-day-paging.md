@@ -32,3 +32,4 @@
 ## 结果记录
 
 - core（checkin_service/context_service 各 +1 函数）、Tauri task_wall_views 加参、api.ts、TasksView（DayNavigator）、TaskCard（anchorDay/interactive/dayWord/missed 文案）、checkin.rs +1 链路测试。
+- 走查修订（同日）：①非今天日期过滤不适用任务（今天保留轮空卡）；②DayNavigator 改为一体分段控件收进标签行（不再单独凸出一行）。

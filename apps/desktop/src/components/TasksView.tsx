@@ -28,7 +28,8 @@ function dayLabel(day: string): string {
   return `${day} · 周${WEEKDAYS[d.getDay()]}`;
 }
 
-/** 日期导航条：◀ ▶ 逐日翻页；中间按钮弹日期选择层跳任意日；非今天时显示「回到今天」。 */
+/** 日期导航：◀ 日期 ▶ 一体分段控件（圆角矩形，与快速捕捉切换器同规格）；
+ *  日期按钮弹选择层跳任意日；非今天时高亮并显示「回到今天」。 */
 function DayNavigator({ day, onChange }: { day: string; onChange: (d: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -41,44 +42,46 @@ function DayNavigator({ day, onChange }: { day: string; onChange: (d: string) =>
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
   const isToday = day === localToday();
-  const btnCls =
-    "flex h-7 items-center justify-center rounded-lg border border-line bg-surface2 px-2 text-xs text-ink2 transition-colors hover:bg-hover hover:text-ink";
+  const segBtn =
+    "flex h-6 items-center justify-center rounded-md text-xs text-ink2 transition-colors hover:bg-surface hover:text-ink";
   return (
-    <div className="flex items-center gap-2">
-      <button className={btnCls} onClick={() => onChange(shiftDay(day, -1))} title="前一天">
-        ◀
-      </button>
-      <div className="relative" ref={ref}>
-        <button
-          className={`${btnCls} min-w-36 tabular-nums ${
-            isToday ? "" : "border-accent/40 font-medium text-accent"
-          }`}
-          onClick={() => setOpen((v) => !v)}
-          title="点击选择日期"
-        >
-          {dayLabel(day)}
-          {isToday ? " · 今天" : ""}
+    <div className="flex items-center gap-2" ref={ref}>
+      <div className="flex items-center rounded-lg bg-hover p-0.5">
+        <button className={`${segBtn} w-6`} onClick={() => onChange(shiftDay(day, -1))} title="前一天">
+          ◀
         </button>
-        {open && (
-          <div className="absolute left-0 top-8 z-30 rounded-xl border border-line bg-surface p-2 shadow-lg">
-            <input
-              type="date"
-              value={day}
-              autoFocus
-              onChange={(e) => {
-                if (e.target.value) {
-                  onChange(e.target.value);
-                  setOpen(false);
-                }
-              }}
-              className="rounded-lg border border-line bg-surface2 px-2 py-1 text-sm text-ink outline-none focus:border-accent/50"
-            />
-          </div>
-        )}
+        <div className="relative">
+          <button
+            className={`${segBtn} px-2 tabular-nums ${
+              isToday ? "" : "bg-surface font-medium text-accent shadow-sm"
+            }`}
+            onClick={() => setOpen((v) => !v)}
+            title="选择日期"
+          >
+            {dayLabel(day)}
+            {isToday ? " · 今天" : ""}
+          </button>
+          {open && (
+            <div className="absolute left-1/2 top-8 z-30 -translate-x-1/2 rounded-xl border border-line bg-surface p-2 shadow-lg">
+              <input
+                type="date"
+                value={day}
+                autoFocus
+                onChange={(e) => {
+                  if (e.target.value) {
+                    onChange(e.target.value);
+                    setOpen(false);
+                  }
+                }}
+                className="rounded-lg border border-line bg-surface2 px-2 py-1 text-sm text-ink outline-none focus:border-accent/50"
+              />
+            </div>
+          )}
+        </div>
+        <button className={`${segBtn} w-6`} onClick={() => onChange(shiftDay(day, 1))} title="后一天">
+          ▶
+        </button>
       </div>
-      <button className={btnCls} onClick={() => onChange(shiftDay(day, 1))} title="后一天">
-        ▶
-      </button>
       {!isToday && (
         <button
           className="rounded-lg px-2 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
@@ -272,24 +275,28 @@ export default function TasksView({
         actions={<Button onClick={() => openEditor(null)}>＋ 新建任务</Button>}
       />
 
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <div className="flex gap-1">
-          {(
-            [
-              { key: "active", label: "进行中" },
-              { key: "archived", label: `已归档（${archived.length}）` },
-            ] as { key: Tab; label: string }[]
-          ).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
-                tab === t.key ? "bg-accent/10 font-medium text-accent" : "text-ink3 hover:text-ink"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1">
+            {(
+              [
+                { key: "active", label: "进行中" },
+                { key: "archived", label: `已归档（${archived.length}）` },
+              ] as { key: Tab; label: string }[]
+            ).map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
+                  tab === t.key ? "bg-accent/10 font-medium text-accent" : "text-ink3 hover:text-ink"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {/* 日期翻页：仅进行中墙；过去/未来日只读回看 */}
+          {tab === "active" && <DayNavigator day={day} onChange={setDay} />}
         </div>
         {tab === "active" && views.length > 0 && (
           <div className="flex gap-1">
@@ -319,13 +326,6 @@ export default function TasksView({
           </div>
         )}
       </div>
-
-      {/* 日期翻页导航（仅进行中墙；过去/未来日只读回看） */}
-      {tab === "active" && (
-        <div className="mt-3">
-          <DayNavigator day={day} onChange={setDay} />
-        </div>
-      )}
 
       {tab === "active" &&
         (views.length === 0 ? (

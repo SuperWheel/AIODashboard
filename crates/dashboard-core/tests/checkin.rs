@@ -488,14 +488,31 @@ fn wall_views_on_past_and_future_day() {
     assert_eq!(views[0].state, "in_progress");
     assert_eq!(views[0].count, 1);
 
-    // 昨天：任务活动区间始于今天 → not_applicable
+    // 昨天：任务活动区间始于今天 → 不适用 → 翻页时被过滤，不出现在那天
     let views = core::context_service::wall_task_views_on(&c, &yesterday).unwrap();
-    assert_eq!(views[0].state, "not_applicable");
+    assert!(views.is_empty());
 
     // 明天：适用但无记录 → pending
     let views = core::context_service::wall_task_views_on(&c, &tomorrow).unwrap();
     assert_eq!(views[0].state, "pending");
     assert_eq!(views[0].count, 0);
+
+    // 轮空卡（weekly，今/昨/明天都不适用）：今天的墙仍显示（004），翻页则过滤
+    let tw = iso_weekday(&today_s);
+    let off = if tw >= 6 { tw - 2 } else { tw + 2 }; // 与今/明/昨天都不同的星期
+    let weekly = make_task_rec(
+        &c,
+        1,
+        Recurrence::Weekly {
+            weekdays: vec![off],
+        },
+    );
+    let views = core::context_service::wall_task_views_on(&c, &today_s).unwrap();
+    assert!(views
+        .iter()
+        .any(|v| v.task.id == weekly.id && v.state == "not_applicable"));
+    let views = core::context_service::wall_task_views_on(&c, &tomorrow).unwrap();
+    assert!(views.iter().all(|v| v.task.id != weekly.id));
 
     // 非法日期被拒
     assert!(core::context_service::wall_task_views_on(&c, "not-a-day").is_err());
