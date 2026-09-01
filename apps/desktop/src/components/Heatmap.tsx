@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import type { AggregateHeatmapDay, HeatmapDay, HeatmapState } from "../types";
-import { fillIntensity, taskColor } from "../taskVisual";
+import { fillIntensity, isPrevYear, taskColor } from "../taskVisual";
 
 /**
  * 热力格：纯色填充（格内无任何符号标记）。圆角矩形；色阶 color-mix；
- * 虚线=不适用；粗框=今天。fluid 模式宽度撑满父级均分（aspect-square）。
+ * 虚线=未来日/上一年度（窗口边缘），实线=本年已过；粗框=今天。
+ * fluid 模式宽度撑满父级均分（aspect-square）。
  */
 export function HeatmapCell({
   state,
@@ -16,6 +17,7 @@ export function HeatmapCell({
   onClick,
   selected = false,
   fluid = false,
+  prevYear = false,
 }: {
   state: HeatmapState;
   rate?: number | null;
@@ -27,6 +29,8 @@ export function HeatmapCell({
   selected?: boolean;
   /** 流体模式：宽度撑满父级（flex/grid 均分）；size 仅用于圆角推算 */
   fluid?: boolean;
+  /** 上一年度的格子：虚线边框 */
+  prevYear?: boolean;
 }) {
   const accent = taskColor(color);
   const intensity = fillIntensity(state, rate ?? null);
@@ -34,11 +38,9 @@ export function HeatmapCell({
 
   let bg: string;
   let borderColor: string;
-  let dashed = false;
   if (state === "not_applicable") {
     bg = "color-mix(in srgb, var(--ink) 4.5%, transparent)";
     borderColor = "color-mix(in srgb, var(--ink) 26%, transparent)";
-    dashed = true;
   } else if (state === "future") {
     bg = "color-mix(in srgb, var(--ink) 8%, transparent)";
     borderColor = "color-mix(in srgb, var(--ink) 26%, transparent)";
@@ -46,6 +48,7 @@ export function HeatmapCell({
     bg = `color-mix(in srgb, ${accent} ${intensity}%, transparent)`;
     borderColor = `color-mix(in srgb, ${accent} ${Math.max(intensity, 32)}%, transparent)`;
   }
+  let dashed = state === "future" || prevYear;
   if (isToday) {
     borderColor = accent;
     dashed = false;
@@ -81,9 +84,9 @@ export function aggregateDayText(d: AggregateHeatmapDay): string {
   return `${d.logical_day}：${d.display_state === "future" ? "尚未到达" : "不适用"}`;
 }
 
-/** 聚合年度热力图（rate 色阶 0–100%）：重要日综合 / 全局首页共用。
+/** 聚合热力图（滚动 53 周，rate 色阶 0–100%）：重要日综合 / 全局首页共用。
  *  color 支持 hex 预设或 CSS 变量（如 var(--accent)）。
- *  未来日不渲染——最右端一列即本周、今天在其中；首屏滚动定位到最右。 */
+ *  未来日与上一年度格子用虚线边框；右端列恒为本周（今天在其中）；首屏滚到最右。 */
 export function RateHeatmapGrid({
   days,
   leadingEmpty,
@@ -100,10 +103,9 @@ export function RateHeatmapGrid({
   onDayClick?: (d: AggregateHeatmapDay) => void;
 }) {
   const accent = color.startsWith("var(") ? color : taskColor(color);
-  const visibleDays = useMemo(() => days.filter((d) => d.display_state !== "future"), [days]);
   const cells: (AggregateHeatmapDay | null)[] = [
     ...Array<null>(leadingEmpty).fill(null),
-    ...visibleDays,
+    ...days,
   ];
   const weeks: (AggregateHeatmapDay | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
@@ -111,7 +113,7 @@ export function RateHeatmapGrid({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollLeft = el.scrollWidth;
-  }, [visibleDays.length]);
+  }, [days.length]);
   return (
     <div ref={scrollRef} className="overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
       <div className="flex" style={{ gap }}>
@@ -119,6 +121,7 @@ export function RateHeatmapGrid({
           <div key={wi} className="flex flex-col" style={{ gap }}>
             {wk.map((d, di) => {
               if (!d) return <div key={`e${di}`} style={{ width: cellSize, height: cellSize }} />;
+              const dashed = d.display_state === "future" || isPrevYear(d.logical_day);
               const bg =
                 d.display_state === "future"
                   ? "color-mix(in srgb, var(--ink) 8%, transparent)"
@@ -137,7 +140,11 @@ export function RateHeatmapGrid({
                     height: cellSize,
                     borderRadius: 3,
                     background: bg,
-                    border: d.is_today ? `1.6px solid ${accent}` : "0.7px solid transparent",
+                    border: d.is_today
+                      ? `1.6px solid ${accent}`
+                      : dashed
+                        ? "0.8px dashed color-mix(in srgb, var(--ink) 30%, transparent)"
+                        : "0.7px solid transparent",
                   }}
                 />
               );
@@ -168,8 +175,8 @@ export function dayDetailText(d: HeatmapDay, unit: string): string {
   }
 }
 
-/** 年热力图（GitHub 式：7 行 × N 周列，横向滚动）。
- *  未来日不渲染——最右端一列即本周、今天在其中；首屏滚动定位到最右。 */
+/** 年热力图（GitHub 式：7 行 × 53 周列，横向滚动，首屏定位最右）。
+ *  窗口为滚动 53 周（右端列=本周）；未来日与上一年度格子虚线边框。 */
 export function YearHeatmap({
   days,
   leadingEmpty,
@@ -189,11 +196,10 @@ export function YearHeatmap({
   selected?: string | null;
   onSelect?: (d: HeatmapDay) => void;
 }) {
-  // 按 (week_index, weekday_index) 摆格子；补年首空格；未来日不渲染
-  const visibleDays = useMemo(() => days.filter((d) => d.display_state !== "future"), [days]);
+  // 按 (week_index, weekday_index) 摆格子；补窗口起点前的前置空格（滚动窗口恒为 0）
   const cells: (HeatmapDay | null)[] = [
     ...Array<HeatmapDay | null>(leadingEmpty).fill(null),
-    ...visibleDays,
+    ...days,
   ];
   const weeks: (HeatmapDay | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) {
@@ -203,7 +209,7 @@ export function YearHeatmap({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollLeft = el.scrollWidth;
-  }, [visibleDays.length]);
+  }, [days.length]);
   return (
     <div ref={scrollRef} className="overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
       <div className="flex" style={{ gap }}>
@@ -218,6 +224,7 @@ export function YearHeatmap({
                   color={color}
                   size={cellSize}
                   isToday={d.is_today}
+                  prevYear={isPrevYear(d.logical_day)}
                   selected={selected === d.logical_day}
                   title={dayDetailText(d, unit)}
                   onClick={onSelect ? () => onSelect(d) : undefined}

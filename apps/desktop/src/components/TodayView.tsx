@@ -5,6 +5,7 @@ import type { GlobalYearHeatmap, LibraryListItem, TaskDayView, TodayContext } fr
 import { taskColor } from "../taskVisual";
 import { RateHeatmapGrid } from "./Heatmap";
 import QuickCapture from "./QuickCapture";
+import TaskEditor from "./TaskEditor";
 import TodayTaskCard from "./TodayTaskCard";
 import { Badge, Card, Empty, ProgressRing, StatCard } from "./ui";
 import { toastError } from "./DialogHost";
@@ -55,6 +56,7 @@ export default function TodayView({
   // 不跟 4s 轮询空转
   const [heatmap, setHeatmap] = useState<GlobalYearHeatmap | null>(null);
   const [libraries, setLibraries] = useState<LibraryListItem[]>([]);
+  const [editorOpen, setEditorOpen] = useState(false);
   const checkinSignal = useMemo(
     () => todayTasks.reduce((s, v) => s + v.count, 0),
     [todayTasks],
@@ -180,7 +182,7 @@ export default function TodayView({
       <Card className="lg:col-span-8">
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">
-            年度热力{heatmap ? ` · ${heatmap.year}` : ""}
+            近一年热力
           </h2>
           <div className="flex items-center gap-1 text-[10px] text-ink3">
             <span className="mr-0.5">少</span>
@@ -331,10 +333,25 @@ export default function TodayView({
       {/* 今日任务主卡（双列渐进填充卡片网格；与上方热力图同宽对齐） */}
       <Card className="lg:col-span-8">
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">今日任务</h2>
-          <span className="text-xs tabular-nums text-ink3">
-            {done}/{total} 达标
-          </span>
+          <button
+            className="text-xs font-semibold uppercase tracking-wider text-ink2 transition-colors hover:text-accent"
+            onClick={() => onNav("tasks")}
+            title="打开任务页"
+          >
+            今日任务
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="flex h-5 w-5 items-center justify-center rounded-md text-sm leading-none text-ink3 transition-colors hover:bg-hover hover:text-accent"
+              onClick={() => setEditorOpen(true)}
+              title="新建任务"
+            >
+              ＋
+            </button>
+            <span className="text-xs tabular-nums text-ink3">
+              {done}/{total} 达标
+            </span>
+          </div>
         </div>
 
         {!data ? (
@@ -370,6 +387,18 @@ export default function TodayView({
 
       {/* 插件卡片舞台（Bento 一等格位，按 size 占位） */}
       {extraCards}
+
+      {/* 新建任务（编辑器为 fixed 弹层，位置无关） */}
+      {editorOpen && (
+        <TaskEditor
+          task={null}
+          onClose={() => setEditorOpen(false)}
+          onSaved={() => {
+            setEditorOpen(false);
+            onChanged();
+          }}
+        />
+      )}
     </div>
   );
 }

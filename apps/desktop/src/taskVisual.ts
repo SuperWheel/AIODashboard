@@ -19,6 +19,11 @@ export function taskColor(hex: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : TASK_COLORS[0].hex;
 }
 
+/** 热力图边框规则：以前年度的格子用虚线（与未来日同属"窗口边缘"视觉）。 */
+export function isPrevYear(day: string): boolean {
+  return day.slice(0, 4) < String(new Date().getFullYear());
+}
+
 /** 填充强度（色阶百分比），作用于 color-mix 的主题色占比。 */
 export function fillIntensity(state: HeatmapState, rate: number | null): number {
   switch (state) {

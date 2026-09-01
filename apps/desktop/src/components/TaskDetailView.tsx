@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { PeriodOverview, TaskDayView } from "../types";
-import { taskColor } from "../taskVisual";
+import { isPrevYear, taskColor } from "../taskVisual";
 import { dayDetailText, HeatmapCell, YearHeatmap } from "./Heatmap";
 import { CheckinControls, TaskRing } from "./TaskCard";
 import { Button } from "./ui";
@@ -215,6 +215,7 @@ export default function TaskDetailView({
                   color={accent}
                   size={26}
                   isToday={d.is_today}
+                  prevYear={isPrevYear(d.logical_day)}
                   selected={selectedDay === d.logical_day}
                   title={dayDetailText(d, task?.unit ?? "")}
                   onClick={() => setSelectedDay(d.logical_day)}

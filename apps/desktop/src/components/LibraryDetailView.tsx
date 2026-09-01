@@ -98,7 +98,7 @@ export default function LibraryDetailView({
       {/* 综合热力图 */}
       <Card className="mt-5 p-4">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">
-          综合热力图 · {heatmap?.year ?? ""}
+          综合热力图 · 近一年
         </h2>
         {heatmap && (
           <div className="mt-3">

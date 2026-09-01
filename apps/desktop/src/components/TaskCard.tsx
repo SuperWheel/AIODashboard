@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { PeriodOverview, Task, TaskDayView } from "../types";
-import { recurrenceLabel, taskColor } from "../taskVisual";
+import { isPrevYear, recurrenceLabel, taskColor } from "../taskVisual";
 import { HeatmapCell, YearHeatmap } from "./Heatmap";
 import { toastError } from "./DialogHost";
 
@@ -373,6 +373,7 @@ export default function TaskCard({
                 size={30}
                 fluid
                 isToday={d.is_today}
+                prevYear={isPrevYear(d.logical_day)}
                 title={`${d.logical_day}`}
               />
             ))}
@@ -391,6 +392,7 @@ export default function TaskCard({
                 size={14}
                 fluid
                 isToday={d.is_today}
+                prevYear={isPrevYear(d.logical_day)}
                 title={d.logical_day}
               />
             ))}

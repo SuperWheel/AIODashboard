@@ -5,7 +5,7 @@ import { toastError } from "./DialogHost";
 type Target = "today" | "inbox";
 
 const TARGET_META: Record<Target, { label: string; hint: string }> = {
-  today: { label: "今天任务", hint: "⏎ 创建为今日打卡任务（默认目标 1 次）" },
+  today: { label: "今天任务", hint: "⏎ 创建为一次性打卡任务（完成即归档）" },
   inbox: { label: "收件箱", hint: "⏎ 收集到收件箱，之后再整理" },
 };
 
@@ -30,7 +30,8 @@ export default function QuickCapture({
     setBusy(true);
     try {
       if (target === "today") {
-        await api.createTask({ title: t });
+        // 快速捕捉的任务默认一次性：完成即归档，不污染长期打卡统计
+        await api.createTask({ title: t, recurrence: { kind: "once" } });
       } else {
         await api.addInboxItem(t);
       }
