@@ -77,9 +77,16 @@ export function aggregateDayText(d: AggregateHeatmapDay): string {
   return `${d.logical_day}：${d.display_state === "future" ? "尚未到达" : "不适用"}`;
 }
 
-/** 实测容器宽度，反推 53 列格子的边长——格子恰好填满，不横向滚动。 */
-function useFitCellSize(cols: number, gap: number, fallback: number): {
+/** 实测容器宽度，按最小格宽决定显示最近多少周列，并反推精确格边长——
+ *  格子恰好填满、不横向滚动；宽度不足时截断为最近 N 周（右端恒为本周、今天在其中）。 */
+function useFitWeeks(
+  totalWeeks: number,
+  gap: number,
+  minCell: number,
+  fallback: number,
+): {
   wrapRef: RefObject<HTMLDivElement>;
+  cols: number;
   size: number;
 } {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -93,13 +100,17 @@ function useFitCellSize(cols: number, gap: number, fallback: number): {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  const cols =
+    width > 0
+      ? Math.max(1, Math.min(totalWeeks, Math.floor((width + gap) / (minCell + gap))))
+      : totalWeeks;
   const size = width > 0 && cols > 0 ? (width - (cols - 1) * gap) / cols : fallback;
-  return { wrapRef, size };
+  return { wrapRef, cols, size };
 }
 
 /** 聚合热力图（滚动 53 周，rate 色阶 0–100%）：重要日综合 / 全局首页共用。
  *  color 支持 hex 预设或 CSS 变量（如 var(--accent)）。
- *  无边框；未来日/上一年度填充减淡；右端列恒为本周（今天在其中）。 */
+ *  无边框；未来日/上一年度填充减淡；格子恰好填满容器宽度（不足时只显示最近 N 周）。 */
 export function RateHeatmapGrid({
   days,
   leadingEmpty,
@@ -120,13 +131,14 @@ export function RateHeatmapGrid({
   ];
   const weeks: (AggregateHeatmapDay | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-  const { wrapRef, size } = useFitCellSize(weeks.length, gap, 10);
+  const { wrapRef, cols, size } = useFitWeeks(weeks.length, gap, 14, 11);
+  const shownWeeks = weeks.slice(-cols);
   const radius = Math.min(size * 0.24, 6);
 
   return (
-    <div ref={wrapRef}>
+    <div ref={wrapRef} className="overflow-hidden">
       <div className="flex" style={{ gap }}>
-        {weeks.map((wk, wi) => (
+        {shownWeeks.map((wk, wi) => (
           <div key={wi} className="flex flex-col" style={{ gap }}>
             {wk.map((d, di) => {
               if (!d) return <div key={`e${di}`} style={{ width: size, height: size }} />;
@@ -180,8 +192,9 @@ export function dayDetailText(d: HeatmapDay, unit: string): string {
   }
 }
 
-/** 年热力图（GitHub 式：7 行 × 53 周列，格子恰好填满容器宽度，不滚动）。
- *  窗口为滚动 53 周（右端列=本周）；未来日/上一年度格子填充减淡。 */
+/** 年热力图（GitHub 式：7 行 × N 周列，格子恰好填满容器宽度，不滚动）。
+ *  窗口为滚动 53 周（右端列=本周）；容器宽度不足时只显示最近 N 周、保证格宽下限；
+ *  未来日/上一年度格子填充减淡。 */
 export function YearHeatmap({
   days,
   leadingEmpty,
@@ -207,11 +220,12 @@ export function YearHeatmap({
   for (let i = 0; i < cells.length; i += 7) {
     weeks.push(cells.slice(i, i + 7));
   }
-  const { wrapRef, size } = useFitCellSize(weeks.length, gap, 8);
+  const { wrapRef, cols, size } = useFitWeeks(weeks.length, gap, 14, 8);
+  const shownWeeks = weeks.slice(-cols);
   return (
-    <div ref={wrapRef}>
+    <div ref={wrapRef} className="overflow-hidden">
       <div className="flex" style={{ gap }}>
-        {weeks.map((wk, wi) => (
+        {shownWeeks.map((wk, wi) => (
           <div key={wi} className="flex flex-col" style={{ gap }}>
             {wk.map((d, di) =>
               d ? (
