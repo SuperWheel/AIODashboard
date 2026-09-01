@@ -75,15 +75,21 @@ export function TaskRing({
   );
 }
 
-/** 打卡控件区：目标=1 → 圆环即按钮；目标>1 → [圆环] [-][+]（圆角矩形同侧并排）。 */
+/** 打卡控件区：目标=1 → 圆环即按钮；目标>1 → [圆环] [-][+]（圆角矩形同侧并排）。
+ *  disabled（翻页浏览非今天时）：只读展示进度，不可打卡。 */
 export function CheckinControls({
   view,
   onChanged,
   size = "md",
+  disabled = false,
+  dayWord = "今天",
 }: {
   view: TaskDayView;
   onChanged: () => void;
   size?: "sm" | "md";
+  disabled?: boolean;
+  /** 「不适用」提示的日期措辞（今天/当日） */
+  dayWord?: string;
 }) {
   const [pending, setPending] = useState(false);
   const target = view.target ?? 1;
@@ -120,9 +126,33 @@ export function CheckinControls({
     );
   }
 
-  // 循环规则今天不命中（如每周三的周卡今天周四）：控件整体停用（004）
+  // 循环规则当日不命中（如每周三的周卡，翻到周四）：控件整体停用（004）
   if (view.state === "not_applicable") {
-    return <span className="shrink-0 text-[11px] text-ink3">今天不适用</span>;
+    return <span className="shrink-0 text-[11px] text-ink3">{dayWord}不适用</span>;
+  }
+
+  // 日期翻页浏览非今天：只读进度环，不可打卡
+  if (disabled) {
+    return (
+      <TaskRing
+        value={done ? 1 : target > 0 ? count / target : 0}
+        color={accent}
+        size={ringSize}
+        title="只能今天打卡"
+      >
+        {target > 1 ? (
+          <span className="text-[10px] font-semibold tabular-nums text-ink">
+            {count}/{target}
+          </span>
+        ) : done ? (
+          <span className="text-sm font-bold" style={{ color: accent }}>
+            ✓
+          </span>
+        ) : (
+          <span className="text-xs text-ink3">○</span>
+        )}
+      </TaskRing>
+    );
   }
 
   if (target <= 1) {
@@ -247,13 +277,16 @@ function StyleMenu({
   );
 }
 
-function subtitleFor(view: TaskDayView, ov: PeriodOverview | null): string {
+function subtitleFor(view: TaskDayView, ov: PeriodOverview | null, dayWord = "今日"): string {
   const t = view.target;
   const unit = view.task.unit;
   const rec = recurrenceLabel(view.task.recurrence);
   const prefix = rec ? `${rec} · ` : "";
   if (view.state === "not_applicable") {
-    return `${prefix}今天不适用`;
+    return `${prefix}${dayWord}不适用`;
+  }
+  if (view.state === "missed") {
+    return `${prefix}已错过（${view.count}/${t ?? 0} ${unit}）`;
   }
   switch (view.task.card_style) {
     case "week":
@@ -269,14 +302,15 @@ function subtitleFor(view: TaskDayView, ov: PeriodOverview | null): string {
         ? `${prefix}本年完成 ${ov.summary.complete_day_count}/${ov.summary.applicable_day_count} 天 · ${ov.summary.actual_count} ${unit} · ${Math.round(ov.summary.complete_day_rate * 100)}%`
         : "加载中…";
     default:
-      if (view.state === "completed") return `${prefix}今日已完成（${view.count} ${unit}）`;
-      if (t && t > 1) return `${prefix}今日 ${view.count} / ${t} ${unit}`;
+      if (view.state === "completed") return `${prefix}${dayWord}已完成（${view.count} ${unit}）`;
+      if (t && t > 1) return `${prefix}${dayWord} ${view.count} / ${t} ${unit}`;
       return rec || "尚未完成";
   }
 }
 
 /**
  * 任务卡片：日/周/月/年四模式共用 header；周/月/年懒加载对应周期总览。
+ * anchorDay：日期翻页时锚定周期总览到所选日；interactive=false 时打卡只读。
  */
 export default function TaskCard({
   view,
@@ -284,12 +318,18 @@ export default function TaskCard({
   onChanged,
   onOpenDetail,
   onEdit,
+  anchorDay,
+  interactive = true,
 }: {
   view: TaskDayView;
   refreshKey: number;
   onChanged: () => void;
   onOpenDetail: (taskId: string) => void;
   onEdit: (task: Task) => void;
+  /** 周期总览锚点日（YYYY-MM-DD）；缺省 = 今天 */
+  anchorDay?: string;
+  /** false = 翻页浏览非今天：打卡控件只读 */
+  interactive?: boolean;
 }) {
   const task = view.task;
   const accent = taskColor(task.color_hex);
@@ -301,7 +341,7 @@ export default function TaskCard({
     if (style === "day") return;
     let alive = true;
     api
-      .taskOverview(task.id, style)
+      .taskOverview(task.id, style, anchorDay)
       .then((r) => {
         if (alive) setOv(r);
       })
@@ -309,7 +349,7 @@ export default function TaskCard({
     return () => {
       alive = false;
     };
-  }, [task.id, style, refreshKey]);
+  }, [task.id, style, refreshKey, anchorDay]);
 
   return (
     <div
@@ -338,10 +378,17 @@ export default function TaskCard({
           title="查看详情"
         >
           <div className="truncate text-sm font-semibold text-ink">{task.title}</div>
-          <div className="mt-0.5 truncate text-xs text-ink3">{subtitleFor(view, ov)}</div>
+          <div className="mt-0.5 truncate text-xs text-ink3">
+            {subtitleFor(view, ov, interactive ? "今日" : "当日")}
+          </div>
         </button>
         <div className="relative flex items-center gap-1.5">
-          <CheckinControls view={view} onChanged={onChanged} />
+          <CheckinControls
+            view={view}
+            onChanged={onChanged}
+            disabled={!interactive}
+            dayWord={interactive ? "今天" : "当日"}
+          />
           <button
             className="rounded-md px-1.5 py-1 text-xs text-ink3 transition-colors hover:bg-hover hover:text-ink"
             onClick={() => setMenuOpen((v) => !v)}

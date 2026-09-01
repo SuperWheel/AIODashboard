@@ -43,18 +43,24 @@ fn require_applicable_today(conn: &Connection, task: &Task, today: &str) -> Core
     Ok(period.target)
 }
 
-fn build_day_view(conn: &Connection, task: Task, today: &str) -> CoreResult<TaskDayView> {
-    let period = period_repo::target_on(conn, &task.id, today)?;
+/// 按任意逻辑日构建任务视图：day=评价日，today=真实今天（missed/pending 分界）。
+fn build_day_view_on(
+    conn: &Connection,
+    task: Task,
+    day: &str,
+    today: &str,
+) -> CoreResult<TaskDayView> {
+    let period = period_repo::target_on(conn, &task.id, day)?;
     let target = period.as_ref().map(|p| p.target);
     let applicable = task.status == dashboard_domain::TaskStatus::Active
-        && period_repo::is_active_on(conn, &task.id, today)?
+        && period_repo::is_active_on(conn, &task.id, day)?
         && period
             .as_ref()
-            .map(|p| p.recurrence.matches(&p.start_day, today))
+            .map(|p| p.recurrence.matches(&p.start_day, day))
             .unwrap_or(false);
-    let count = completion_repo::day_count(conn, &task.id, today)?;
-    let state = crate::day_state::eval_day_state(applicable, target, count, today, today);
-    let library_id = period_repo::membership_on(conn, &task.id, today)?.map(|m| m.library_id);
+    let count = completion_repo::day_count(conn, &task.id, day)?;
+    let state = crate::day_state::eval_day_state(applicable, target, count, day, today);
+    let library_id = period_repo::membership_on(conn, &task.id, day)?.map(|m| m.library_id);
     let can_undo =
         completion_repo::latest_uncompensated_positive_any_day(conn, &task.id)?.is_some();
     Ok(TaskDayView {
@@ -65,6 +71,10 @@ fn build_day_view(conn: &Connection, task: Task, today: &str) -> CoreResult<Task
         library_id,
         can_undo,
     })
+}
+
+fn build_day_view(conn: &Connection, task: Task, today: &str) -> CoreResult<TaskDayView> {
+    build_day_view_on(conn, task, today, today)
 }
 
 /// 一次性任务打卡达标 → 自动归档（004 决策：完成即终态，历史保留）。
@@ -87,6 +97,14 @@ pub fn task_day_view(conn: &Connection, task_id: &str) -> CoreResult<TaskDayView
     let task = crate::task_service::get_task(conn, task_id)?;
     let today = local_today();
     build_day_view(conn, task, &today)
+}
+
+/// 指定逻辑日的任务视图（任务页日期翻页用）。过去日未达标=missed，未来日=pending。
+pub fn task_day_view_on(conn: &Connection, task_id: &str, day: &str) -> CoreResult<TaskDayView> {
+    crate::logical_day::parse_day(day)?;
+    let task = crate::task_service::get_task(conn, task_id)?;
+    let today = local_today();
+    build_day_view_on(conn, task, day, &today)
 }
 
 /// 打卡 +1。幂等：同 operation_id 重放返回当前视图，不重复计数。

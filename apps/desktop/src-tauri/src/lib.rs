@@ -37,11 +37,15 @@ fn get_today() -> R<core::context_service::TodayContext> {
     core::context_service::context_today(&c).map_err(|e| e.to_string())
 }
 
-/// 任务墙：全部启用任务的当日视图（含今天不适用者，004）。
+/// 任务墙：全部启用任务在指定逻辑日的视图（含当日不适用者）。
+/// day=None = 今天；指定日期用于任务页日期翻页（过去日 missed / 未来日 pending）。
 #[tauri::command]
-fn task_wall_views() -> R<Vec<core::checkin_service::TaskDayView>> {
+fn task_wall_views(day: Option<String>) -> R<Vec<core::checkin_service::TaskDayView>> {
     let c = conn()?;
-    core::context_service::wall_task_views(&c).map_err(|e| e.to_string())
+    match day.as_deref() {
+        Some(d) => core::context_service::wall_task_views_on(&c, d).map_err(|e| e.to_string()),
+        None => core::context_service::wall_task_views(&c).map_err(|e| e.to_string()),
+    }
 }
 
 /// scope: "all" | "active" | "archived"

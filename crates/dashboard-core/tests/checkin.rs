@@ -471,6 +471,36 @@ fn global_heatmap_archive_excludes_from_archive_day_on() {
     assert!((today_cell.rate.unwrap() - 0.5).abs() < 1e-9);
 }
 
+// ---------- 日期翻页（任务墙按日视图） ----------
+
+#[test]
+fn wall_views_on_past_and_future_day() {
+    let c = conn();
+    let t = make_task(&c, 2);
+    core::checkin_service::record(&c, &t.id, "op-1", Actor::User).unwrap();
+    let today_s = today();
+    let yesterday = core::logical_day::add_days(&today_s, -1).unwrap();
+    let tomorrow = core::logical_day::add_days(&today_s, 1).unwrap();
+
+    // 今天：1/2 → in_progress
+    let views = core::context_service::wall_task_views_on(&c, &today_s).unwrap();
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].state, "in_progress");
+    assert_eq!(views[0].count, 1);
+
+    // 昨天：任务活动区间始于今天 → not_applicable
+    let views = core::context_service::wall_task_views_on(&c, &yesterday).unwrap();
+    assert_eq!(views[0].state, "not_applicable");
+
+    // 明天：适用但无记录 → pending
+    let views = core::context_service::wall_task_views_on(&c, &tomorrow).unwrap();
+    assert_eq!(views[0].state, "pending");
+    assert_eq!(views[0].count, 0);
+
+    // 非法日期被拒
+    assert!(core::context_service::wall_task_views_on(&c, "not-a-day").is_err());
+}
+
 // ---------- 今日上下文 ----------
 
 #[test]

@@ -96,6 +96,15 @@ pub fn today_task_views(conn: &Connection) -> CoreResult<Vec<TaskDayView>> {
 /// Today 只看今日适用；任务墙要展示"存在但今天轮空"的卡（否则每周任务
 /// 在非适用日会从任务页整卡消失）。顺序按创建时间升序。
 pub fn wall_task_views(conn: &Connection) -> CoreResult<Vec<TaskDayView>> {
+    let today = local_today();
+    wall_task_views_on(conn, &today)
+}
+
+/// 任务墙视图（指定逻辑日）：全部启用任务在该日的视图，含当日不适用者。
+/// 过去日未达标 = missed、未来日 = pending（day_state 按真实今天判定）。
+/// 日期翻页专用；顺序按创建时间升序。
+pub fn wall_task_views_on(conn: &Connection, day: &str) -> CoreResult<Vec<TaskDayView>> {
+    crate::logical_day::parse_day(day)?;
     let tasks = ds::task_repo::list(
         conn,
         &ds::task_repo::TaskQuery {
@@ -106,7 +115,7 @@ pub fn wall_task_views(conn: &Connection) -> CoreResult<Vec<TaskDayView>> {
     )?;
     let mut views = Vec::with_capacity(tasks.len());
     for t in tasks {
-        views.push(crate::checkin_service::task_day_view(conn, &t.id)?);
+        views.push(crate::checkin_service::task_day_view_on(conn, &t.id, day)?);
     }
     views.sort_by_key(|v| v.task.created_at);
     Ok(views)

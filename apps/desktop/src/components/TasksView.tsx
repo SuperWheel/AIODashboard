@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
-import { useMinWidth, usePolling } from "../hooks";
+import { localToday, useMinWidth, usePolling } from "../hooks";
 import type { CardStyle, Task, TaskDayView } from "../types";
 import TaskCard from "./TaskCard";
 import TaskDetailView from "./TaskDetailView";
@@ -13,6 +13,83 @@ type Tab = "active" | "archived";
 type WallMode = "smart" | "grouped";
 
 const WALL_MODE_KEY = "aiodashboard.tasks.wallMode";
+
+const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"] as const;
+
+function shiftDay(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  const pad = (x: number) => String(x).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function dayLabel(day: string): string {
+  const d = new Date(`${day}T00:00:00`);
+  return `${day} · 周${WEEKDAYS[d.getDay()]}`;
+}
+
+/** 日期导航条：◀ ▶ 逐日翻页；中间按钮弹日期选择层跳任意日；非今天时显示「回到今天」。 */
+function DayNavigator({ day, onChange }: { day: string; onChange: (d: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const isToday = day === localToday();
+  const btnCls =
+    "flex h-7 items-center justify-center rounded-lg border border-line bg-surface2 px-2 text-xs text-ink2 transition-colors hover:bg-hover hover:text-ink";
+  return (
+    <div className="flex items-center gap-2">
+      <button className={btnCls} onClick={() => onChange(shiftDay(day, -1))} title="前一天">
+        ◀
+      </button>
+      <div className="relative" ref={ref}>
+        <button
+          className={`${btnCls} min-w-36 tabular-nums ${
+            isToday ? "" : "border-accent/40 font-medium text-accent"
+          }`}
+          onClick={() => setOpen((v) => !v)}
+          title="点击选择日期"
+        >
+          {dayLabel(day)}
+          {isToday ? " · 今天" : ""}
+        </button>
+        {open && (
+          <div className="absolute left-0 top-8 z-30 rounded-xl border border-line bg-surface p-2 shadow-lg">
+            <input
+              type="date"
+              value={day}
+              autoFocus
+              onChange={(e) => {
+                if (e.target.value) {
+                  onChange(e.target.value);
+                  setOpen(false);
+                }
+              }}
+              className="rounded-lg border border-line bg-surface2 px-2 py-1 text-sm text-ink outline-none focus:border-accent/50"
+            />
+          </div>
+        )}
+      </div>
+      <button className={btnCls} onClick={() => onChange(shiftDay(day, 1))} title="后一天">
+        ▶
+      </button>
+      {!isToday && (
+        <button
+          className="rounded-lg px-2 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
+          onClick={() => onChange(localToday())}
+        >
+          回到今天
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** 各样式的兜底高度估算（px）：仅用于卡片首次渲染、实测值到达前的发牌；
  *  实测（ResizeObserver）才是均衡依据——副标题换行/月卡行数等都会让实际高度偏离估算。 */
@@ -87,6 +164,9 @@ export default function TasksView({
   const [archived, setArchived] = useState<Task[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
+  // 日期翻页：任务墙查看的逻辑日（默认今天；过去日只读回看）
+  const [day, setDay] = useState(localToday());
+  const isToday = day === localToday();
   const [wallMode, setWallMode] = useState<WallMode>(() => {
     try {
       return localStorage.getItem(WALL_MODE_KEY) === "grouped" ? "grouped" : "smart";
@@ -133,10 +213,10 @@ export default function TasksView({
   const detailId = navParam?.startsWith("tsk_") ? navParam : null;
 
   const load = () => {
-    // 任务墙 = 全部启用任务的当日视图（含今天不适用者，004）；
+    // 任务墙 = 全部启用任务在所选日的视图（含当日不适用者，004）；
     // Today 页仍走 getToday 只看今日适用
     api
-      .taskWallViews()
+      .taskWallViews(day)
       .then(setViews)
       .catch(console.error);
     api
@@ -144,7 +224,7 @@ export default function TasksView({
       .then(setArchived)
       .catch(console.error);
   };
-  usePolling(load, 4000, [refreshKey]);
+  usePolling(load, 4000, [refreshKey, day]);
 
   useEffect(() => {
     if (navParam === "archived") setTab("archived");
@@ -164,6 +244,8 @@ export default function TasksView({
         onChanged={onChanged}
         onOpenDetail={(id) => onNav("tasks", id)}
         onEdit={openEditor}
+        anchorDay={day}
+        interactive={isToday}
       />
     </MeasuredCard>
   );
@@ -237,6 +319,13 @@ export default function TasksView({
           </div>
         )}
       </div>
+
+      {/* 日期翻页导航（仅进行中墙；过去/未来日只读回看） */}
+      {tab === "active" && (
+        <div className="mt-3">
+          <DayNavigator day={day} onChange={setDay} />
+        </div>
+      )}
 
       {tab === "active" &&
         (views.length === 0 ? (

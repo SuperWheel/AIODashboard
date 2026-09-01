@@ -75,8 +75,8 @@ function recurrencePayload(rec?: Recurrence): Record<string, unknown> {
 export const api = {
   // Today / Tasks
   getToday: () => invoke<TodayContext>("get_today"),
-  /** 任务墙：全部启用任务的当日视图（含今天不适用） */
-  taskWallViews: () => invoke<TaskDayView[]>("task_wall_views"),
+  /** 任务墙：全部启用任务在指定逻辑日的视图（含当日不适用）；day 缺省 = 今天 */
+  taskWallViews: (day?: string) => invoke<TaskDayView[]>("task_wall_views", { day: day ?? null }),
   listTasks: (scope?: "all" | "active" | "archived") =>
     invoke<Task[]>("list_tasks", { scope }),
   createTask: (params: CreateTaskParams) =>
