@@ -406,7 +406,6 @@ export default function TaskCard({
             leadingEmpty={ov.leading_empty_count}
             color={accent}
             unit={task.unit}
-            cellSize={9}
             gap={2}
           />
         </div>

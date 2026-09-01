@@ -33,8 +33,12 @@
 
 **走查修复**（用户第二轮反馈，含协议变更）：
 - **年热力图窗口改为滚动 53 周（协议 v3→v4）**：`task overview --period year`、重要日/全局综合热力图的年窗口从日历年改为 `[本周一−52周, 本周日]`（恒 371 天、起点周一、`leading_empty_count` 恒 0、`week_index` 以窗口起点为第 0 列）。新 `logical_day::rolling_year_range`，删除 `year_week_index`/`year_leading_empty`。**迁移说明**：CLI 消费者若需日历年口径，按返回的 `start_day`/`end_day` 自行裁剪；字段名与信封结构不变。建档 openspec/changes/005。
-- **热力格边框规则**：虚线 = 未来日 / 上一年度（`HeatmapCell.prevYear` + `isPrevYear`）；实线 = 本年已过；粗框 = 今天。不适用日在本年范围内不再虚线。滚动窗口恒 53 列填满卡片。
+- **热力格边框规则**：虚线 = 未来日 / 上一年度（`HeatmapCell.prevYear` + `isPrevYear`）；实线 = 本年已过；粗框 = 今天。不适用日在本年范围内不再虚线。滚动窗口恒 53 列填满卡片。（视觉细节已被第三轮修订取代，见下）
 - **快速捕捉建任务默认一次性**（`recurrence=once`，完成即归档，不污染长期打卡统计）；今日任务卡标题点击进任务页、头部加 ＋ 新建按钮（复用 TaskEditor 弹层）。
+
+**走查修复**（用户第三轮反馈）：
+- 热力格**取消全部边框**（含今天粗框——今天由位置表达：恒在最右列）；未来日/上一年度改为填充色减淡（×0.45），虚线方案废弃。
+- 年热力图取消横向滚动：ResizeObserver 实测容器宽度，按 `(宽 − 52×间距) / 53` 反推格边长，格子恰好填满（YearHeatmap 移除 cellSize 入参；RateHeatmapGrid 同理）。005 spec/design 已同步修订。
 
 ---
 

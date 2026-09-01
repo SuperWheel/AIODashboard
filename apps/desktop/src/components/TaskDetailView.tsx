@@ -231,7 +231,6 @@ export default function TaskDetailView({
             leadingEmpty={ov.leading_empty_count}
             color={accent}
             unit={task?.unit ?? ""}
-            cellSize={12}
             gap={4}
             selected={selectedDay}
             onSelect={(d) => setSelectedDay(d.logical_day)}

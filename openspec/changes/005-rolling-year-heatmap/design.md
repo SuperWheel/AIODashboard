@@ -26,8 +26,9 @@ schema_version "3"→"4"。字段名与信封结构不变；`task overview --per
 library/global 热力图的 start_day/end_day/week_index/leading_empty_count 语义变更。
 CLI 消费者如需日历年口径，按 start_day/end_day 自行裁剪。
 
-## 前端边框规则
+## 前端视觉规则（走查三轮修订）
 
-`HeatmapCell` 增 `prevYear` prop；`isPrevYear(day)` 按日历年字符串比较。
-dashed = future || prevYear；不适用日本年范围内不再虚线（ faint 填充已足够区分）。
-两个网格组件（YearHeatmap / RateHeatmapGrid）渲染完整 53 列并首屏滚动到最右。
+格子**无边框**、纯色填充、无符号标记；未来日/上一年度填充减淡（×0.45）；
+今天由位置表达（恒在最右列）。`HeatmapCell` 保留 `prevYear` 入参控制减淡。
+两个年网格组件用 ResizeObserver 实测容器宽度反推格边长（`(宽 − 52×间距) / 53`），
+恰好填满、不横向滚动——原固定格宽 + overflow-x-auto 方案与虚线边框方案均已废弃。
