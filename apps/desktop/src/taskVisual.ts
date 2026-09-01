@@ -2,8 +2,7 @@
  * 任务卡片视觉规格（移植自 PlanningDays，贴合本仓库语义 token 双主题）。
  *
  * 任务主题色 hex 存库，色阶用 color-mix 作用于透明底——双主题自动成立，不新增 token。
- * 「颜色不是唯一通道」：不适用=虚线框、今天=加粗边框、未来=小圆点、0 次=横杠、
- * 部分完成=单/双点、完成=✓。
+ * 「颜色不是唯一通道」：不适用=虚线框、今天=加粗边框；格内一律纯色填充，不放符号标记。
  */
 import type { HeatmapState } from "./types";
 
@@ -34,24 +33,6 @@ export function fillIntensity(state: HeatmapState, rate: number | null): number 
       return Math.round(18 + Math.min(1, rate ?? 0) * 74);
     case "complete":
       return 94;
-  }
-}
-
-/** 格内符号标记：颜色之外的第二通道。 */
-export function stateMarker(state: HeatmapState): "dot" | "dash" | "dots1" | "dots2" | "check" | null {
-  switch (state) {
-    case "future":
-      return "dot";
-    case "zero":
-      return "dash";
-    case "partial_low":
-      return "dots1";
-    case "partial_high":
-      return "dots2";
-    case "complete":
-      return "check";
-    default:
-      return null;
   }
 }
 

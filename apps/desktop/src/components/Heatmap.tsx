@@ -1,9 +1,10 @@
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import type { AggregateHeatmapDay, HeatmapDay, HeatmapState } from "../types";
-import { fillIntensity, stateMarker, taskColor } from "../taskVisual";
+import { fillIntensity, taskColor } from "../taskVisual";
 
 /**
- * 热力格：六态渲染。圆角矩形；色阶 color-mix；虚线=不适用；粗框=今天；符号标记第二通道。
+ * 热力格：纯色填充（格内无任何符号标记）。圆角矩形；色阶 color-mix；
+ * 虚线=不适用；粗框=今天。fluid 模式宽度撑满父级均分（aspect-square）。
  */
 export function HeatmapCell({
   state,
@@ -14,6 +15,7 @@ export function HeatmapCell({
   title,
   onClick,
   selected = false,
+  fluid = false,
 }: {
   state: HeatmapState;
   rate?: number | null;
@@ -23,6 +25,8 @@ export function HeatmapCell({
   title?: string;
   onClick?: () => void;
   selected?: boolean;
+  /** 流体模式：宽度撑满父级（flex/grid 均分）；size 仅用于圆角推算 */
+  fluid?: boolean;
 }) {
   const accent = taskColor(color);
   const intensity = fillIntensity(state, rate ?? null);
@@ -47,17 +51,16 @@ export function HeatmapCell({
     dashed = false;
   }
 
-  const style: CSSProperties = {
-    width: size,
-    height: size,
+  const base: CSSProperties = {
     borderRadius: radius,
     background: bg,
     border: `${isToday ? 1.8 : 0.8}px ${dashed ? "dashed" : "solid"} ${borderColor}`,
     boxShadow: selected ? `0 0 0 2px var(--ink)` : undefined,
   };
+  const style: CSSProperties = fluid
+    ? { ...base, width: "100%", aspectRatio: "1 / 1", flex: "1 1 0%", minWidth: 0 }
+    : { ...base, width: size, height: size };
 
-  const marker = stateMarker(state);
-  const m = size; // 标记尺寸随格子缩放
   return (
     <div
       style={style}
@@ -66,75 +69,7 @@ export function HeatmapCell({
       role={onClick ? "button" : undefined}
       className={`relative shrink-0 ${onClick ? "cursor-pointer" : ""}`}
       aria-label={title}
-    >
-      {marker === "dot" && (
-        <div
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
-          style={{
-            width: m * 0.2,
-            height: m * 0.2,
-            background: "var(--ink-3)",
-          }}
-        />
-      )}
-      {marker === "dash" && (
-        <div
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
-          style={{
-            width: m * 0.42,
-            height: Math.max(1, m * 0.1),
-            background: accent,
-          }}
-        />
-      )}
-      {marker === "dots1" && (
-        <div
-          className="absolute rounded-full"
-          style={{
-            width: m * 0.22,
-            height: m * 0.22,
-            left: m * 0.18,
-            bottom: m * 0.18,
-            background: "color-mix(in srgb, var(--ink) 65%, transparent)",
-          }}
-        />
-      )}
-      {marker === "dots2" && (
-        <div
-          className="absolute flex gap-[1px]"
-          style={{ left: m * 0.14, bottom: m * 0.18 }}
-        >
-          {[0, 1].map((i) => (
-            <div
-              key={i}
-              className="rounded-full"
-              style={{
-                width: m * 0.2,
-                height: m * 0.2,
-                background: "color-mix(in srgb, var(--ink) 70%, transparent)",
-              }}
-            />
-          ))}
-        </div>
-      )}
-      {marker === "check" && (
-        <svg
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-          width={m * 0.52}
-          height={m * 0.52}
-          viewBox="0 0 10 10"
-        >
-          <path
-            d="M1.5 5.2 L4 7.5 L8.5 2.5"
-            fill="none"
-            stroke="white"
-            strokeWidth={1.8}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-    </div>
+    />
   );
 }
 
@@ -147,7 +82,8 @@ export function aggregateDayText(d: AggregateHeatmapDay): string {
 }
 
 /** 聚合年度热力图（rate 色阶 0–100%）：重要日综合 / 全局首页共用。
- *  color 支持 hex 预设或 CSS 变量（如 var(--accent)）。 */
+ *  color 支持 hex 预设或 CSS 变量（如 var(--accent)）。
+ *  未来日不渲染——最右端一列即本周、今天在其中；首屏滚动定位到最右。 */
 export function RateHeatmapGrid({
   days,
   leadingEmpty,
@@ -164,14 +100,20 @@ export function RateHeatmapGrid({
   onDayClick?: (d: AggregateHeatmapDay) => void;
 }) {
   const accent = color.startsWith("var(") ? color : taskColor(color);
+  const visibleDays = useMemo(() => days.filter((d) => d.display_state !== "future"), [days]);
   const cells: (AggregateHeatmapDay | null)[] = [
     ...Array<null>(leadingEmpty).fill(null),
-    ...days,
+    ...visibleDays,
   ];
   const weeks: (AggregateHeatmapDay | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [visibleDays.length]);
   return (
-    <div className="overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
+    <div ref={scrollRef} className="overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
       <div className="flex" style={{ gap }}>
         {weeks.map((wk, wi) => (
           <div key={wi} className="flex flex-col" style={{ gap }}>
@@ -226,7 +168,8 @@ export function dayDetailText(d: HeatmapDay, unit: string): string {
   }
 }
 
-/** 年热力图（GitHub 式：7 行 × N 周列，横向滚动，首屏定位最近周）。 */
+/** 年热力图（GitHub 式：7 行 × N 周列，横向滚动）。
+ *  未来日不渲染——最右端一列即本周、今天在其中；首屏滚动定位到最右。 */
 export function YearHeatmap({
   days,
   leadingEmpty,
@@ -246,17 +189,23 @@ export function YearHeatmap({
   selected?: string | null;
   onSelect?: (d: HeatmapDay) => void;
 }) {
-  // 按 (week_index, weekday_index) 摆格子；补年首空格
+  // 按 (week_index, weekday_index) 摆格子；补年首空格；未来日不渲染
+  const visibleDays = useMemo(() => days.filter((d) => d.display_state !== "future"), [days]);
   const cells: (HeatmapDay | null)[] = [
     ...Array<HeatmapDay | null>(leadingEmpty).fill(null),
-    ...days,
+    ...visibleDays,
   ];
   const weeks: (HeatmapDay | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) {
     weeks.push(cells.slice(i, i + 7));
   }
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [visibleDays.length]);
   return (
-    <div className="overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
+    <div ref={scrollRef} className="overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
       <div className="flex" style={{ gap }}>
         {weeks.map((wk, wi) => (
           <div key={wi} className="flex flex-col" style={{ gap }}>

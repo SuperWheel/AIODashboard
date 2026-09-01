@@ -360,7 +360,7 @@ export default function TaskCard({
         </div>
       </div>
 
-      {/* 周期内容区 */}
+      {/* 周期内容区（周/月格子流体均分卡宽） */}
       {style === "week" && ov && (
         <button className="mt-3 block w-full" onClick={() => onOpenDetail(task.id)}>
           <div className="flex gap-2">
@@ -371,6 +371,7 @@ export default function TaskCard({
                 rate={d.capped_rate}
                 color={accent}
                 size={30}
+                fluid
                 isToday={d.is_today}
                 title={`${d.logical_day}`}
               />
@@ -388,6 +389,7 @@ export default function TaskCard({
                 rate={d.capped_rate}
                 color={accent}
                 size={14}
+                fluid
                 isToday={d.is_today}
                 title={d.logical_day}
               />

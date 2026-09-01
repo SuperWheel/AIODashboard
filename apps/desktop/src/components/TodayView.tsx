@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { localToday } from "../hooks";
 import type { GlobalYearHeatmap, LibraryListItem, TaskDayView, TodayContext } from "../types";
@@ -8,10 +8,6 @@ import QuickCapture from "./QuickCapture";
 import TodayTaskCard from "./TodayTaskCard";
 import { Badge, Card, Empty, ProgressRing, StatCard } from "./ui";
 import { toastError } from "./DialogHost";
-
-/** 打卡操作后的位置冻结窗口：窗口内不重排（卡片留在原位，数据照常刷新），
- * 之后的轮询刷新再按最新状态归位——避免完成瞬间卡片跳来跳去。 */
-const GROUP_SETTLE_MS = 3000;
 
 /** 重要日天数短文案（首页右栏卡）。 */
 function libraryDayText(it: LibraryListItem): { text: string; overdue: boolean } {
@@ -30,6 +26,8 @@ function libraryDayText(it: LibraryListItem): { text: string; overdue: boolean }
 /**
  * Today = Bento 总控台：今日任务为双列渐进填充卡片网格。
  * ⌘Z 撤销本次会话最近一次打卡。
+ * 位置规则（2026-09-01 用户拍板）：会话内卡片绝不重排——完成后留在原位，
+ * 只有视图重进/页面刷新重建快照时才把已完成沉底；新任务追加末尾。
  */
 export default function TodayView({
   data,
@@ -71,7 +69,6 @@ export default function TodayView({
 
   // ⌘Z：撤销本次会话最近一次打卡的任务
   const [lastActionTask, setLastActionTask] = useState<string | null>(null);
-  const lastActionAt = useRef(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z" || !lastActionTask) return;
@@ -87,7 +84,6 @@ export default function TodayView({
       const taskId = lastActionTask;
       // 同步清掉：请求返回前连按 ⌘Z 不会撤销两次
       setLastActionTask(null);
-      lastActionAt.current = Date.now();
       api
         .taskUndo(taskId)
         .then(onChanged)
@@ -97,14 +93,15 @@ export default function TodayView({
     return () => window.removeEventListener("keydown", onKey);
   }, [lastActionTask, onChanged]);
 
-  // 位置快照：数据每次刷新（打卡回写 + 4s 轮询）都会到达；冻结窗口内
-  // 沿用旧顺序、只吸收新任务（追加末尾），窗口过后重建（未完成在前、已完成沉底）。
+  // 位置快照（会话级）：首个数据到达时排序（未完成在前、已完成沉底）；
+  // 之后打卡/轮询只刷新数据、绝不动顺序，新任务追加末尾；
+  // 已完成沉底只在视图重进/页面刷新（重建快照）时生效。
   const [pin, setPin] = useState<string[] | null>(null);
   useEffect(() => {
     if (!data) return;
     const tasks = data.today_tasks;
     setPin((prev) => {
-      if (!prev || Date.now() - lastActionAt.current >= GROUP_SETTLE_MS) {
+      if (!prev) {
         const idx = new Map(tasks.map((v, i) => [v.task.id, i] as const));
         return [...tasks]
           .sort((a, b) => {
@@ -145,7 +142,6 @@ export default function TodayView({
   }, [todayTasks, pin]);
 
   const afterAction = (taskId: string) => {
-    lastActionAt.current = Date.now();
     setLastActionTask(taskId);
     onChanged();
   };
@@ -180,8 +176,8 @@ export default function TodayView({
         <StatCard label="收件箱" value={data ? inbox : "-"} tone="violet" onClick={() => onNav("inbox")} />
       </div>
 
-      {/* 年度热力图（全局所有任务聚合，GitHub 式） */}
-      <Card className="lg:col-span-12">
+      {/* 年度热力图（全局所有任务聚合；与今日任务同宽对齐，未来日不渲染） */}
+      <Card className="lg:col-span-8">
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">
             年度热力{heatmap ? ` · ${heatmap.year}` : ""}
@@ -217,48 +213,9 @@ export default function TodayView({
         </div>
       </Card>
 
-      {/* 今日任务主卡（双列渐进填充卡片网格） */}
-      <Card className="lg:col-span-8">
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">今日任务</h2>
-          <span className="text-xs tabular-nums text-ink3">
-            {done}/{total} 达标
-          </span>
-        </div>
-
-        {!data ? (
-          <div className="p-4 text-sm text-ink3">加载中…</div>
-        ) : todayTasks.length === 0 ? (
-          <div className="p-4">
-            <Empty
-              text="今天没有进行中的任务"
-              glyph="☀"
-              action={
-                <button
-                  className="text-xs text-accent hover:underline"
-                  onClick={() => onNav("tasks")}
-                >
-                  去新建一个打卡任务 →
-                </button>
-              }
-            />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
-            {displayTasks.map((v) => (
-              <TodayTaskCard
-                key={v.task.id}
-                view={v}
-                onChanged={() => afterAction(v.task.id)}
-                onOpenDetail={(id) => onNav("tasks", id)}
-              />
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* 右栏：重要日 + 最近笔记 + 活跃项目 */}
-      <div className="flex flex-col gap-4 lg:col-span-4">
+      {/* 右栏：重要日 + 最近笔记 + 活跃项目（跨热力图/今日任务两行；DOM 在今日任务之前，
+          grid 自动落位才能跨行占住右上） */}
+      <div className="flex flex-col gap-4 lg:col-span-4 lg:row-span-2">
         <Card hoverable>
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">重要日</h2>
@@ -370,6 +327,46 @@ export default function TodayView({
           </div>
         </Card>
       </div>
+
+      {/* 今日任务主卡（双列渐进填充卡片网格；与上方热力图同宽对齐） */}
+      <Card className="lg:col-span-8">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink2">今日任务</h2>
+          <span className="text-xs tabular-nums text-ink3">
+            {done}/{total} 达标
+          </span>
+        </div>
+
+        {!data ? (
+          <div className="p-4 text-sm text-ink3">加载中…</div>
+        ) : todayTasks.length === 0 ? (
+          <div className="p-4">
+            <Empty
+              text="今天没有进行中的任务"
+              glyph="☀"
+              action={
+                <button
+                  className="text-xs text-accent hover:underline"
+                  onClick={() => onNav("tasks")}
+                >
+                  去新建一个打卡任务 →
+                </button>
+              }
+            />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
+            {displayTasks.map((v) => (
+              <TodayTaskCard
+                key={v.task.id}
+                view={v}
+                onChanged={() => afterAction(v.task.id)}
+                onOpenDetail={(id) => onNav("tasks", id)}
+              />
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* 插件卡片舞台（Bento 一等格位，按 size 占位） */}
       {extraCards}
