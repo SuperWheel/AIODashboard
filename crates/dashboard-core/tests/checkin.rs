@@ -1,10 +1,10 @@
 //! 打卡体系 core 链路测试（内存库）。
 //!
 //! 覆盖 tasks.md TDD 清单中需要数据库的部分：账本幂等/补偿、目标区间、
-//! 活动区间、归属与主库聚合、迁移。
+//! 活动区间、归属与重要日聚合、迁移。
 
 use dashboard_core as core;
-use dashboard_domain::{Actor, CardStyle, LibraryKind, TaskStatus};
+use dashboard_domain::{Actor, CardStyle, LibraryKind, Recurrence, TaskStatus};
 use dashboard_storage as ds;
 use rusqlite::Connection;
 
@@ -36,7 +36,7 @@ fn make_lib(conn: &Connection, kind: LibraryKind, anchor: &str) -> dashboard_dom
     core::library_service::create_library(
         conn,
         &core::library_service::CreateLibraryInput {
-            title: "主库".into(),
+            title: "重要日".into(),
             note: String::new(),
             icon: String::new(),
             color_hex: "#4A90E2".into(),
@@ -87,6 +87,87 @@ fn undo_reverses_latest_operation() {
     assert_eq!(v.count, 0);
     // 已撤销后无可撤销操作
     assert!(core::checkin_service::undo(&c, &t.id, "op-3", Actor::User).is_err());
+}
+
+#[test]
+fn undo_cross_day_compensates_original_day() {
+    let c = conn();
+    let t = make_task(&c, 1);
+    let today = today();
+    let yesterday = core::logical_day::add_days(&today, -1).unwrap();
+    // 直接造一条昨天的打卡记录（账本可回溯写入）
+    ds::completion_repo::append(
+        &c,
+        &ds::completion_repo::NewCompletion {
+            task_id: t.id.clone(),
+            operation_id: "op-y1".into(),
+            value: 1,
+            kind: dashboard_domain::CompletionKind::Add,
+            compensates_record_id: None,
+            logical_day: yesterday.clone(),
+            source: "user".to_string(),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    // 今天撤销昨天的打卡：昨天计数减回 0，今天账面不受污染
+    let v = core::checkin_service::undo(&c, &t.id, "op-u1", Actor::User).unwrap();
+    assert_eq!(v.count, 0);
+    assert_eq!(
+        ds::completion_repo::day_count(&c, &t.id, &yesterday).unwrap(),
+        0
+    );
+    assert_eq!(ds::completion_repo::day_sum(&c, &t.id, &today).unwrap(), 0);
+    // 撤销不占用今天的账面：之后正常打卡立即可见
+    let v = core::checkin_service::record(&c, &t.id, "op-t1", Actor::User).unwrap();
+    assert_eq!(v.count, 1);
+}
+
+#[test]
+fn reopen_compensates_each_positive_then_guards_hold() {
+    let c = conn();
+    let t = make_task(&c, 2);
+    core::checkin_service::record(&c, &t.id, "op-1", Actor::User).unwrap();
+    core::checkin_service::record(&c, &t.id, "op-2", Actor::User).unwrap();
+    let v = core::checkin_service::reopen_today(&c, &t.id, Actor::User).unwrap();
+    assert_eq!(v.count, 0);
+    // 清零后账面真实和为 0（不是负数），且守卫生效
+    assert_eq!(
+        ds::completion_repo::day_sum(&c, &t.id, &today()).unwrap(),
+        0
+    );
+    assert!(core::checkin_service::decrement(&c, &t.id, "op-3", Actor::User).is_err());
+    assert!(core::checkin_service::undo(&c, &t.id, "op-4", Actor::User).is_err());
+    // 重新打卡后 complete 补满仍准确
+    core::checkin_service::record(&c, &t.id, "op-5", Actor::User).unwrap();
+    let v = core::checkin_service::complete_today(&c, &t.id, Actor::User).unwrap();
+    assert_eq!(v.count, 2);
+    assert_eq!(v.state, "completed");
+}
+
+#[test]
+fn complete_today_fills_true_ledger_sum() {
+    let c = conn();
+    let t = make_task(&c, 1);
+    // 模拟历史遗留的无指向负记录（旧版 reopen 的批量写法留下的脏数据）
+    ds::completion_repo::append(
+        &c,
+        &ds::completion_repo::NewCompletion {
+            task_id: t.id.clone(),
+            operation_id: "op-legacy".into(),
+            value: -1,
+            kind: dashboard_domain::CompletionKind::Undo,
+            compensates_record_id: None,
+            logical_day: today(),
+            source: "user".to_string(),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    // 按真实账面和(-1)补足 +2 → 计数 1，正确显示已完成
+    let v = core::checkin_service::complete_today(&c, &t.id, Actor::User).unwrap();
+    assert_eq!(v.count, 1);
+    assert_eq!(v.state, "completed");
 }
 
 #[test]
@@ -182,7 +263,7 @@ fn year_overview_days_count() {
     assert!(ov.days.len() == 365 || ov.days.len() == 366);
 }
 
-// ---------- 日期主库 ----------
+// ---------- 重要日 ----------
 
 #[test]
 fn library_day_calculation() {
@@ -304,14 +385,14 @@ fn archive_library_move_to_rolls_back_on_bad_target() {
     );
 }
 
-// ---------- 主库综合热力图 ----------
+// ---------- 重要日综合热力图 ----------
 
 #[test]
 fn library_heatmap_aggregate() {
     let c = conn();
     let today = today();
     let lib = make_lib(&c, LibraryKind::Anniversary, &today);
-    // 任务 A：目标 2 打 2 → 100%；任务 B：目标 2 打 1 → 50%；主库 = 75%
+    // 任务 A：目标 2 打 2 → 100%；任务 B：目标 2 打 1 → 50%；重要日 = 75%
     let a = make_task(&c, 2);
     let b = make_task(&c, 2);
     core::library_service::move_task(&c, &a.id, Some(&lib.id), Actor::User).unwrap();
@@ -325,6 +406,58 @@ fn library_heatmap_aggregate() {
     assert_eq!(today_cell.display_state, "rate");
     assert!((today_cell.rate.unwrap() - 0.75).abs() < 1e-9);
     assert_eq!(today_cell.active_task_count, 2);
+}
+
+// ---------- 全局综合热力图 ----------
+
+#[test]
+fn global_heatmap_aggregates_all_tasks() {
+    let c = conn();
+    // A 2/2 → 1.0；B 2/1 → 0.5；C 目标 1 打 3 次 → 超额封顶 1.0
+    let a = make_task(&c, 2);
+    let b = make_task(&c, 2);
+    let cc = make_task(&c, 1);
+    for op in ["op-a1", "op-a2"] {
+        core::checkin_service::record(&c, &a.id, op, Actor::User).unwrap();
+    }
+    core::checkin_service::record(&c, &b.id, "op-b1", Actor::User).unwrap();
+    for op in ["op-c1", "op-c2", "op-c3"] {
+        core::checkin_service::record(&c, &cc.id, op, Actor::User).unwrap();
+    }
+
+    let hm = core::overview_service::global_year_heatmap(&c, None).unwrap();
+    let today_cell = hm.days.iter().find(|d| d.is_today).unwrap();
+    assert_eq!(today_cell.display_state, "rate");
+    assert!((today_cell.rate.unwrap() - (1.0 + 0.5 + 1.0) / 3.0).abs() < 1e-9);
+    assert_eq!(today_cell.active_task_count, 3);
+
+    // 未来日 → future；任务创建日之前的过去日 → not_applicable
+    let today_s = today();
+    assert!(hm
+        .days
+        .iter()
+        .filter(|d| d.logical_day > today_s)
+        .all(|d| d.display_state == "future"));
+    assert!(hm
+        .days
+        .iter()
+        .filter(|d| d.logical_day < today_s)
+        .all(|d| d.display_state == "not_applicable"));
+}
+
+#[test]
+fn global_heatmap_archive_excludes_from_archive_day_on() {
+    let c = conn();
+    let a = make_task(&c, 1);
+    let b = make_task(&c, 2);
+    core::checkin_service::record(&c, &a.id, "op-a1", Actor::User).unwrap();
+    core::checkin_service::record(&c, &b.id, "op-b1", Actor::User).unwrap();
+    core::task_service::archive_task(&c, &a.id, Actor::User).unwrap();
+    // 归档当天起 A 不再适用：今日只剩 B（1/2 = 0.5）
+    let hm = core::overview_service::global_year_heatmap(&c, None).unwrap();
+    let today_cell = hm.days.iter().find(|d| d.is_today).unwrap();
+    assert_eq!(today_cell.active_task_count, 1);
+    assert!((today_cell.rate.unwrap() - 0.5).abs() < 1e-9);
 }
 
 // ---------- 今日上下文 ----------
@@ -369,6 +502,8 @@ fn migration_v3_maps_old_status_and_backfills_periods() {
     let targets = ds::period_repo::list_targets(&c, "tsk_a").unwrap();
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0].target, 1);
+    // V4：存量区间无循环列 → daily（行为与升级前一致）
+    assert_eq!(targets[0].recurrence, Recurrence::Daily);
     let acts = ds::period_repo::list_activity(&c, "tsk_a").unwrap();
     assert_eq!(acts.len(), 1);
     assert!(acts[0].end_day.is_none());
@@ -409,5 +544,140 @@ fn card_style_persisted() {
     assert_eq!(
         core::task_service::get_task(&c, &t.id).unwrap().card_style,
         CardStyle::Year
+    );
+}
+
+// ---------- 循环规则（004） ----------
+
+fn make_task_rec(conn: &Connection, target: i64, rec: Recurrence) -> dashboard_domain::Task {
+    core::task_service::create_task(
+        conn,
+        &core::task_service::CreateTaskInput {
+            title: "循环任务".into(),
+            unit: "次".into(),
+            daily_target: target,
+            recurrence: rec,
+            ..Default::default()
+        },
+        Actor::User,
+    )
+    .unwrap()
+}
+
+/// 今天的 ISO 星期（1=周一…7=周日）。
+fn iso_weekday(day: &str) -> u8 {
+    (core::logical_day::weekday_index(day).unwrap() as u8) + 1
+}
+
+#[test]
+fn weekly_off_day_rejects_checkin_and_hides_from_today() {
+    let c = conn();
+    let today = today();
+    let off_day = (iso_weekday(&today) % 7) + 1; // 必不等于今天
+    let t = make_task_rec(
+        &c,
+        1,
+        Recurrence::Weekly {
+            weekdays: vec![off_day],
+        },
+    );
+    assert!(core::checkin_service::record(&c, &t.id, "op-1", Actor::User).is_err());
+    // Today 只看今日适用
+    let ctx = core::context_service::context_today(&c).unwrap();
+    assert!(!ctx.today_tasks.iter().any(|v| v.task.id == t.id));
+    // 任务墙仍展示（not_applicable）
+    let wall = core::context_service::wall_task_views(&c).unwrap();
+    let wv = wall.iter().find(|v| v.task.id == t.id).unwrap();
+    assert_eq!(wv.state, "not_applicable");
+    assert_eq!(
+        wv.task.recurrence,
+        Recurrence::Weekly {
+            weekdays: vec![off_day]
+        }
+    );
+}
+
+#[test]
+fn weekly_on_day_checkin_ok() {
+    let c = conn();
+    let t = make_task_rec(
+        &c,
+        2,
+        Recurrence::Weekly {
+            weekdays: vec![iso_weekday(&today())],
+        },
+    );
+    let v = core::checkin_service::record(&c, &t.id, "op-1", Actor::User).unwrap();
+    assert_eq!(v.count, 1);
+}
+
+#[test]
+fn once_task_auto_archives_on_completion() {
+    let c = conn();
+    let t = make_task_rec(&c, 1, Recurrence::Once);
+    let v = core::checkin_service::record(&c, &t.id, "op-1", Actor::User).unwrap();
+    assert_eq!(v.state, "completed");
+    // 完成即自动归档
+    assert_eq!(
+        core::task_service::get_task(&c, &t.id).unwrap().status,
+        TaskStatus::Archived
+    );
+    // Today 不再出现，账本历史保留
+    let ctx = core::context_service::context_today(&c).unwrap();
+    assert!(!ctx.today_tasks.iter().any(|x| x.task.id == t.id));
+    assert_eq!(
+        ds::completion_repo::day_count(&c, &t.id, &today()).unwrap(),
+        1
+    );
+}
+
+#[test]
+fn once_task_target_gt1_stays_until_full() {
+    let c = conn();
+    let t = make_task_rec(&c, 2, Recurrence::Once);
+    let v = core::checkin_service::record(&c, &t.id, "op-1", Actor::User).unwrap();
+    assert_eq!(v.state, "in_progress");
+    assert_eq!(
+        core::task_service::get_task(&c, &t.id).unwrap().status,
+        TaskStatus::Active
+    );
+    let v = core::checkin_service::record(&c, &t.id, "op-2", Actor::User).unwrap();
+    assert_eq!(v.state, "completed");
+    assert_eq!(
+        core::task_service::get_task(&c, &t.id).unwrap().status,
+        TaskStatus::Archived
+    );
+}
+
+#[test]
+fn update_recurrence_effective_from_tomorrow() {
+    let c = conn();
+    let today = today();
+    let tomorrow = core::logical_day::add_days(&today, 1).unwrap();
+    let t = make_task_rec(&c, 1, Recurrence::Daily);
+    core::task_service::update_task(
+        &c,
+        &t.id,
+        &core::task_service::UpdateTaskInput {
+            recurrence: Some(Recurrence::Monthly),
+            ..Default::default()
+        },
+        Actor::User,
+    )
+    .unwrap();
+    // 今天仍按旧规则（daily），明天起 monthly——历史口径不回写
+    assert_eq!(
+        ds::period_repo::target_on(&c, &t.id, &today)
+            .unwrap()
+            .unwrap()
+            .recurrence,
+        Recurrence::Daily
+    );
+    assert_eq!(
+        ds::period_repo::target_on(&c, &t.id, &tomorrow)
+            .unwrap()
+            .unwrap()
+            .recurrence,
+        Recurrence::Monthly
     );
 }

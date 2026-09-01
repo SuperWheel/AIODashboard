@@ -70,8 +70,21 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         conn.execute_batch(SCHEMA_V3)?;
         conn.pragma_update(None, "user_version", 3)?;
     }
+    if version < 4 {
+        // V4：目标区间增循环规则列。加列与版本号写入同一事务，
+        // 堵住"建表成功但版本号未落盘、崩溃后重跑"的窗口（004 design 决策 8）。
+        conn.execute_batch(SCHEMA_V4)?;
+    }
     Ok(())
 }
+
+/// V4 仅加列：`task_target_periods.recurrence`（JSON；NULL = daily，见 domain::Recurrence）。
+const SCHEMA_V4: &str = r#"
+BEGIN;
+ALTER TABLE task_target_periods ADD COLUMN recurrence TEXT;
+PRAGMA user_version = 4;
+COMMIT;
+"#;
 
 const SCHEMA_V1: &str = r#"
 BEGIN;
@@ -176,7 +189,7 @@ COMMIT;
 /// - tasks 表重建：status todo/doing→active、done→archived；删除 due_at/completed_at；
 ///   新增 icon/color_hex/unit/card_style。旧 due_at/completed_at 数据不回填打卡账本，
 ///   避免污染迁移日热力图。
-/// - 新增打卡账本、目标区间、活动区间、日期主库、归属区间五张表。
+/// - 新增打卡账本、目标区间、活动区间、重要日、归属区间五张表。
 /// - 为每个存量任务补默认目标区间（target=1）与活动区间（起点=创建日本地日期）。
 const SCHEMA_V3: &str = r#"
 BEGIN;

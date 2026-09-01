@@ -1,8 +1,8 @@
-//! 周期总览：周/月/年热力图数据构建（单任务 + 主库聚合）。
+//! 周期总览：周/月/年热力图数据构建（单任务 + 重要日聚合）。
 
 use chrono::Datelike;
 use dashboard_domain::Task;
-use dashboard_storage::{completion_repo, period_repo};
+use dashboard_storage::{completion_repo, period_repo, task_repo};
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -85,23 +85,23 @@ fn build_days(
     let mut days = Vec::new();
     for day in ld::days_inclusive(from, to)? {
         let actual = counts.get(&day).copied().unwrap_or(0).max(0);
-        let target = targets
-            .iter()
-            .find(|p| {
-                p.start_day <= day
-                    && p.end_day
-                        .as_deref()
-                        .map(|e| e > day.as_str())
-                        .unwrap_or(true)
-            })
-            .map(|p| p.target);
-        let applicable = activities.iter().any(|p| {
+        let period = targets.iter().find(|p| {
             p.start_day <= day
                 && p.end_day
                     .as_deref()
                     .map(|e| e > day.as_str())
                     .unwrap_or(true)
         });
+        let target = period.map(|p| p.target);
+        let applicable = activities.iter().any(|p| {
+            p.start_day <= day
+                && p.end_day
+                    .as_deref()
+                    .map(|e| e > day.as_str())
+                    .unwrap_or(true)
+        }) && period
+            .map(|p| p.recurrence.matches(&p.start_day, &day))
+            .unwrap_or(false);
         let (display, rate, over) = eval_heatmap_state(applicable, target, actual, &day, today);
         let day_state = match display {
             crate::day_state::HeatmapState::Future
@@ -233,13 +233,13 @@ pub fn task_period_overview(
     })
 }
 
-/// 主库年度综合热力图单日。
+/// 聚合热力图单日（重要日综合 / 全局共用形状）。
+/// display_state: not_applicable / future / rate；rate 时 rate 字段为 0–1。
 #[derive(Debug, Serialize)]
-pub struct LibraryHeatmapDay {
+pub struct AggregateHeatmapDay {
     pub logical_day: String,
-    /// not_applicable / future / rate（0–1）
     pub display_state: String,
-    /// 主库当日完成率（不适用/未来为 null）
+    /// 当日完成率（不适用/未来为 null）
     pub rate: Option<f64>,
     pub active_task_count: i64,
     pub is_today: bool,
@@ -255,10 +255,143 @@ pub struct LibraryYearHeatmap {
     pub start_day: String,
     pub end_day: String,
     pub leading_empty_count: i64,
-    pub days: Vec<LibraryHeatmapDay>,
+    pub days: Vec<AggregateHeatmapDay>,
 }
 
-/// 主库综合热力图（按年）。逐日读取当时真实生效的活动/目标/归属区间。
+#[derive(Debug, Serialize)]
+pub struct GlobalYearHeatmap {
+    pub year: i64,
+    pub start_day: String,
+    pub end_day: String,
+    pub leading_empty_count: i64,
+    pub days: Vec<AggregateHeatmapDay>,
+}
+
+/// 聚合预取：计数按 (task_id, day)，目标/活动区间按 task_id。
+struct TaskDayFacts {
+    counts: std::collections::HashMap<(String, String), i64>,
+    targets: std::collections::HashMap<String, Vec<dashboard_domain::TaskTargetPeriod>>,
+    activities: std::collections::HashMap<String, Vec<dashboard_domain::TaskActivityPeriod>>,
+}
+
+fn prefetch_task_facts(
+    conn: &Connection,
+    task_ids: &[String],
+    start: &str,
+    end: &str,
+) -> CoreResult<TaskDayFacts> {
+    let mut counts = std::collections::HashMap::new();
+    let mut targets = std::collections::HashMap::new();
+    let mut activities = std::collections::HashMap::new();
+    for tid in task_ids {
+        for (day, n) in completion_repo::counts_between(conn, tid, start, end)? {
+            counts.insert((tid.clone(), day), n);
+        }
+        targets.insert(tid.clone(), period_repo::list_targets(conn, tid)?);
+        activities.insert(tid.clone(), period_repo::list_activity(conn, tid)?);
+    }
+    Ok(TaskDayFacts {
+        counts,
+        targets,
+        activities,
+    })
+}
+
+/// 单任务单日贡献：活动区间不覆盖 / 循环不命中 / 无目标或目标<=0 → None；
+/// 否则 min(actual/target, 1)（超额封顶）。
+fn task_day_contrib(facts: &TaskDayFacts, task_id: &str, day: &str) -> Option<f64> {
+    let period = facts.targets.get(task_id).and_then(|ps| {
+        ps.iter().find(|p| {
+            p.start_day.as_str() <= day && p.end_day.as_deref().map(|e| e > day).unwrap_or(true)
+        })
+    })?;
+    if period.target <= 0 || !period.recurrence.matches(&period.start_day, day) {
+        return None;
+    }
+    let active = facts
+        .activities
+        .get(task_id)
+        .map(|ps| {
+            ps.iter().any(|p| {
+                p.start_day.as_str() <= day && p.end_day.as_deref().map(|e| e > day).unwrap_or(true)
+            })
+        })
+        .unwrap_or(false);
+    if !active {
+        return None;
+    }
+    let actual = facts
+        .counts
+        .get(&(task_id.to_string(), day.to_string()))
+        .copied()
+        .unwrap_or(0)
+        .max(0) as f64;
+    Some((actual / period.target as f64).min(1.0))
+}
+
+/// 逐日聚合：day_tasks 为 None 时每日取 all_tasks（全局口径），
+/// 否则按当日真实生效归属（重要日口径）。未来日 → future；无有效任务 → not_applicable。
+fn aggregate_days(
+    facts: &TaskDayFacts,
+    start: &str,
+    end: &str,
+    today: &str,
+    day_tasks: Option<&std::collections::HashMap<String, Vec<String>>>,
+    all_tasks: &[String],
+) -> CoreResult<Vec<AggregateHeatmapDay>> {
+    let mut days = Vec::new();
+    for day in ld::days_inclusive(start, end)? {
+        let is_today = day == *today;
+        let weekday_index = ld::weekday_index(&day)?;
+        let week_index = ld::year_week_index(&day)?;
+        let month = ld::parse_day(&day)?.month() as i64;
+
+        if day.as_str() > today {
+            days.push(AggregateHeatmapDay {
+                logical_day: day,
+                display_state: "future".into(),
+                rate: None,
+                active_task_count: 0,
+                is_today,
+                weekday_index,
+                week_index,
+                month,
+            });
+            continue;
+        }
+
+        let tids: &[String] = match day_tasks {
+            Some(m) => m.get(&day).map(Vec::as_slice).unwrap_or(&[]),
+            None => all_tasks,
+        };
+        let mut contrib_sum = 0f64;
+        let mut active_n = 0i64;
+        for tid in tids {
+            if let Some(c) = task_day_contrib(facts, tid, &day) {
+                contrib_sum += c;
+                active_n += 1;
+            }
+        }
+        let (state, rate) = if active_n == 0 {
+            ("not_applicable", None)
+        } else {
+            ("rate", Some(contrib_sum / active_n as f64))
+        };
+        days.push(AggregateHeatmapDay {
+            logical_day: day,
+            display_state: state.into(),
+            rate,
+            active_task_count: active_n,
+            is_today,
+            weekday_index,
+            week_index,
+            month,
+        });
+    }
+    Ok(days)
+}
+
+/// 重要日综合热力图（按年）。逐日读取当时真实生效的活动/目标/归属区间。
 pub fn library_year_heatmap(
     conn: &Connection,
     library_id: &str,
@@ -281,22 +414,7 @@ pub fn library_year_heatmap(
         v.dedup();
         v
     };
-    // 预取每个任务的打卡计数、目标区间、活动区间
-    let mut counts: std::collections::HashMap<(String, String), i64> =
-        std::collections::HashMap::new();
-    let mut targets: std::collections::HashMap<String, Vec<dashboard_domain::TaskTargetPeriod>> =
-        std::collections::HashMap::new();
-    let mut activities: std::collections::HashMap<
-        String,
-        Vec<dashboard_domain::TaskActivityPeriod>,
-    > = std::collections::HashMap::new();
-    for tid in &task_ids {
-        for (day, n) in completion_repo::counts_between(conn, tid, &start, &end)? {
-            counts.insert((tid.clone(), day), n);
-        }
-        targets.insert(tid.clone(), period_repo::list_targets(conn, tid)?);
-        activities.insert(tid.clone(), period_repo::list_activity(conn, tid)?);
-    }
+    let facts = prefetch_task_facts(conn, &task_ids, &start, &end)?;
 
     // 按日聚合归属：day -> Vec<task_id>
     let mut day_tasks: std::collections::HashMap<String, Vec<String>> =
@@ -313,84 +431,42 @@ pub fn library_year_heatmap(
         }
     }
 
-    let mut days = Vec::new();
-    for day in ld::days_inclusive(&start, &end)? {
-        let is_today = day == today;
-        let weekday_index = ld::weekday_index(&day)?;
-        let week_index = ld::year_week_index(&day)?;
-        let month = ld::parse_day(&day)?.month() as i64;
-
-        if day > today {
-            days.push(LibraryHeatmapDay {
-                logical_day: day,
-                display_state: "future".into(),
-                rate: None,
-                active_task_count: 0,
-                is_today,
-                weekday_index,
-                week_index,
-                month,
-            });
-            continue;
-        }
-
-        let tids = day_tasks.get(&day).cloned().unwrap_or_default();
-        let mut contrib_sum = 0f64;
-        let mut active_n = 0i64;
-        for tid in &tids {
-            let target = targets
-                .get(tid)
-                .and_then(|ps| {
-                    ps.iter().find(|p| {
-                        p.start_day <= day
-                            && p.end_day
-                                .as_deref()
-                                .map(|e| e > day.as_str())
-                                .unwrap_or(true)
-                    })
-                })
-                .map(|p| p.target);
-            let applicable = activities.get(tid).map(|ps| {
-                ps.iter().any(|p| {
-                    p.start_day <= day
-                        && p.end_day
-                            .as_deref()
-                            .map(|e| e > day.as_str())
-                            .unwrap_or(true)
-                })
-            }) == Some(true);
-            if !applicable || target.map(|t| t <= 0).unwrap_or(true) {
-                continue;
-            }
-            let target = target.unwrap_or(0) as f64;
-            let actual = counts
-                .get(&(tid.clone(), day.clone()))
-                .copied()
-                .unwrap_or(0)
-                .max(0) as f64;
-            contrib_sum += (actual / target).min(1.0);
-            active_n += 1;
-        }
-
-        let (state, rate) = if active_n == 0 {
-            ("not_applicable", None)
-        } else {
-            ("rate", Some(contrib_sum / active_n as f64))
-        };
-        days.push(LibraryHeatmapDay {
-            logical_day: day,
-            display_state: state.into(),
-            rate,
-            active_task_count: active_n,
-            is_today,
-            weekday_index,
-            week_index,
-            month,
-        });
-    }
-
+    let days = aggregate_days(&facts, &start, &end, &today, Some(&day_tasks), &[])?;
     Ok(LibraryYearHeatmap {
         library_id: lib.id,
+        year: anchor_date.year() as i64,
+        leading_empty_count: ld::year_leading_empty(&anchor)?,
+        start_day: start,
+        end_day: end,
+        days,
+    })
+}
+
+/// 全局年度综合热力图：聚合所有任务（含已归档——归档只关闭活动区间，
+/// 历史日口径由区间决定，不回写）。聚合口径与重要日综合热力图一致。
+pub fn global_year_heatmap(
+    conn: &Connection,
+    anchor_day: Option<&str>,
+) -> CoreResult<GlobalYearHeatmap> {
+    let today = local_today();
+    let anchor = anchor_day
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| today.clone());
+    let anchor_date = ld::parse_day(&anchor)?;
+    let (start, end) = ld::year_range(&anchor)?;
+
+    let tasks = task_repo::list(
+        conn,
+        &task_repo::TaskQuery {
+            limit: i64::MAX,
+            ..Default::default()
+        },
+    )?;
+    let task_ids: Vec<String> = tasks.into_iter().map(|t| t.id).collect();
+    let facts = prefetch_task_facts(conn, &task_ids, &start, &end)?;
+    let days = aggregate_days(&facts, &start, &end, &today, None, &task_ids)?;
+
+    Ok(GlobalYearHeatmap {
         year: anchor_date.year() as i64,
         leading_empty_count: ld::year_leading_empty(&anchor)?,
         start_day: start,

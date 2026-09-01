@@ -91,7 +91,7 @@ pub fn delete(conn: &Connection, id: &str) -> rusqlite::Result<usize> {
 
 pub fn open_task_count(conn: &Connection, project_id: &str) -> rusqlite::Result<i64> {
     conn.query_row(
-        "SELECT COUNT(*) FROM tasks WHERE project_id=?1 AND status != 'done'",
+        "SELECT COUNT(*) FROM tasks WHERE project_id=?1 AND status = 'active'",
         params![project_id],
         |r| r.get(0),
     )

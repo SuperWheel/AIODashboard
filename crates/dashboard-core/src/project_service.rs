@@ -44,6 +44,7 @@ pub fn create_project(
         Some(&p.id),
         &serde_json::json!({ "name": p.name }),
     );
+    crate::snapshot::refresh(conn);
     Ok(p)
 }
 
@@ -125,6 +126,7 @@ pub fn archive_project(conn: &Connection, id: &str, actor: Actor) -> CoreResult<
         Some(id),
         &serde_json::json!({}),
     );
+    crate::snapshot::refresh(conn);
     Ok(())
 }
 
@@ -144,5 +146,6 @@ pub fn delete_project(conn: &Connection, id: &str, dry_run: bool, actor: Actor) 
         Some(id),
         &serde_json::json!({}),
     );
+    crate::snapshot::refresh(conn);
     Ok(())
 }

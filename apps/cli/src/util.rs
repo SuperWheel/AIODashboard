@@ -27,7 +27,7 @@ pub fn resolve_task_id(conn: &Connection, input: &str) -> CoreResult<String> {
     }
 }
 
-/// 主库 ID 完整或唯一前缀匹配。
+/// 重要日 ID 完整或唯一前缀匹配。
 pub fn resolve_library_id(conn: &Connection, input: &str) -> CoreResult<String> {
     if let Some(l) = library_repo::get(conn, input)? {
         return Ok(l.id);
@@ -42,7 +42,7 @@ pub fn resolve_library_id(conn: &Connection, input: &str) -> CoreResult<String> 
         ))),
         1 => Ok(ids.into_iter().next().unwrap_or_default()),
         _ => Err(dashboard_core::CoreError::Validation(format!(
-            "ID 前缀 '{input}' 匹配到多个主库，请使用更长前缀"
+            "ID 前缀 '{input}' 匹配到多个重要日，请使用更长前缀"
         ))),
     }
 }

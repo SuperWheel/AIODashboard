@@ -103,7 +103,7 @@ fn chain_core_create_then_cli_read_json() {
     assert_eq!(code, 0);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], true);
-    assert_eq!(v["meta"]["schema_version"], "2");
+    assert_eq!(v["meta"]["schema_version"], "3");
     let items = v["data"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["id"], task.id.as_str());
@@ -145,7 +145,7 @@ fn chain_complete_compat_deprecated() {
 fn chain_library_create_move_archive() {
     let env = Env::new();
     let today = Env::today_str();
-    // 创建纪念日主库
+    // 创建纪念日重要日
     let (code, out) = env.cli(&[
         "library",
         "create",
@@ -172,7 +172,7 @@ fn chain_library_create_move_archive() {
     let (code, out) = env.cli(&["task", "move", &task_id, "--library", &lib_id, "--json"]);
     assert_eq!(code, 0, "{out}");
 
-    // 主库 show：直属任务 1 个
+    // 重要日 show：直属任务 1 个
     let (code, out) = env.cli(&["library", "show", &lib_id, "--json"]);
     assert_eq!(code, 0, "{out}");
     let v: Value = serde_json::from_str(&out).unwrap();
@@ -244,7 +244,7 @@ fn ai_error_protocol_not_found_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "2");
+    assert_eq!(v["meta"]["schema_version"], "3");
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn plugin_unknown_id_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "2");
+    assert_eq!(v["meta"]["schema_version"], "3");
 }
 
 /// T4：manifest 非法的目录在 list 中以 error 呈现，不影响整体。
@@ -407,4 +407,107 @@ fn plugin_new_and_dev_roundtrip() {
     // dev 指向不存在的插件 → exit 3
     let (code, _) = env.cli(&["plugin", "dev", "com.test.missing", "--json"]);
     assert_eq!(code, 3);
+}
+
+#[test]
+fn chain_task_recurrence() {
+    let env = Env::new();
+    let today = Env::today_str();
+    let wd = {
+        use chrono::Datelike;
+        let d = chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d").unwrap();
+        d.weekday().number_from_monday() // ISO 1..7
+    };
+    let off_day = (wd % 7) + 1; // 必不等于今天
+
+    // 1) weekly 含今天：创建即 JSON 带 recurrence，schema_version=3，打卡成功
+    let (code, out) = env.cli(&[
+        "task",
+        "create",
+        "--title",
+        "每周打卡",
+        "--recurrence",
+        "weekly",
+        "--weekdays",
+        &wd.to_string(),
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"]["recurrence"]["kind"], "weekly");
+    assert_eq!(v["meta"]["schema_version"], "3");
+    let id_on = v["data"]["id"].as_str().unwrap().to_string();
+    let (code, out) = env.cli(&["task", "checkin", &id_on, "--json"]);
+    assert_eq!(code, 0, "{out}");
+
+    // 2) weekly 不含今天：Today 列表排除，checkin 拒绝（Validation → exit 2）
+    let (code, out) = env.cli(&[
+        "task",
+        "create",
+        "--title",
+        "周外打卡",
+        "--recurrence",
+        "weekly",
+        "--weekdays",
+        &off_day.to_string(),
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let id_off = v["data"]["id"].as_str().unwrap().to_string();
+    let (code, out) = env.cli(&["task", "checkin", &id_off, "--json"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("今天不适用"));
+    let (code, out) = env.cli(&["context", "today", "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let in_today = v["data"]["today_tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|x| x["task"]["id"] == id_off.as_str());
+    assert!(!in_today);
+
+    // 3) 一次性任务：达标即自动归档，历史保留
+    let (code, out) = env.cli(&[
+        "task",
+        "create",
+        "--title",
+        "一次性事项",
+        "--recurrence",
+        "once",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let id_once = v["data"]["id"].as_str().unwrap().to_string();
+    let (code, out) = env.cli(&["task", "checkin", &id_once, "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let (code, out) = env.cli(&["task", "show", &id_once, "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"]["task"]["status"], "archived");
+    assert_eq!(v["data"]["count"], 1);
+
+    // 4) 非法循环参数：weekly 缺 --weekdays → exit 2
+    let (code, _) = env.cli(&[
+        "task",
+        "create",
+        "--title",
+        "坏参数",
+        "--recurrence",
+        "weekly",
+        "--json",
+    ]);
+    assert_eq!(code, 2);
+    let (code, _) = env.cli(&[
+        "task",
+        "create",
+        "--title",
+        "坏参数",
+        "--recurrence",
+        "nope",
+        "--json",
+    ]);
+    assert_eq!(code, 2);
 }

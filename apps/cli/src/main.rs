@@ -19,7 +19,7 @@ use dashboard_core::{
     task_service,
 };
 use dashboard_core::{CoreError, CoreResult};
-use dashboard_domain::{Actor, CardStyle, LibraryKind, TaskStatus};
+use dashboard_domain::{Actor, CardStyle, LibraryKind, Recurrence, TaskStatus};
 use dashboard_protocol::{Envelope, ExitCode};
 use dashboard_storage as ds;
 use serde_json::{json, Value};
@@ -47,7 +47,7 @@ enum Commands {
         #[command(subcommand)]
         cmd: TaskCmd,
     },
-    /// 日期主库（纪念日 / 倒计时日）
+    /// 重要日（纪念日 / 倒计时日）
     Library {
         #[command(subcommand)]
         cmd: LibraryCmd,
@@ -123,16 +123,22 @@ enum TaskCmd {
         /// 卡片样式 day|week|month|year
         #[arg(long = "card-style")]
         card_style: Option<String>,
+        /// 循环类型 daily|weekly|monthly|yearly|once
+        #[arg(long)]
+        recurrence: Option<String>,
+        /// weekly 循环的星期（1=周一…7=周日，逗号分隔）
+        #[arg(long, value_delimiter = ',')]
+        weekdays: Option<Vec<u8>>,
         #[arg(long)]
         project: Option<String>,
-        /// 创建时归入的日期主库
+        /// 创建时归入的重要日
         #[arg(long)]
         library: Option<String>,
         /// 从 stdin 读取 JSON：{"title":..., "target":..., "unit":...}
         #[arg(long)]
         stdin: bool,
     },
-    /// 更新任务（目标修改从明天起生效）
+    /// 更新任务（目标/循环修改从明天起生效）
     Update {
         id: String,
         #[arg(long)]
@@ -147,6 +153,12 @@ enum TaskCmd {
         color: Option<String>,
         #[arg(long = "card-style")]
         card_style: Option<String>,
+        /// 循环类型 daily|weekly|monthly|yearly|once
+        #[arg(long)]
+        recurrence: Option<String>,
+        /// weekly 循环的星期（1=周一…7=周日，逗号分隔）
+        #[arg(long, value_delimiter = ',')]
+        weekdays: Option<Vec<u8>>,
         #[arg(long)]
         project: Option<String>,
         #[arg(long = "clear-project")]
@@ -188,7 +200,7 @@ enum TaskCmd {
     Complete { id: String },
     /// [deprecated] 等价于今日清零，请改用 decrement/undo
     Reopen { id: String },
-    /// 移动任务到日期主库（今日起生效；--clear 移出为独立任务）
+    /// 移动任务到重要日（今日起生效；--clear 移出为独立任务）
     Move {
         id: String,
         #[arg(long)]
@@ -211,7 +223,7 @@ enum TaskCmd {
 
 #[derive(Subcommand)]
 enum LibraryCmd {
-    /// 创建日期主库
+    /// 创建重要日
     Create {
         #[arg(short, long)]
         title: Option<String>,
@@ -231,14 +243,14 @@ enum LibraryCmd {
         #[arg(long)]
         stdin: bool,
     },
-    /// 列出主库
+    /// 列出重要日
     List {
         #[arg(long = "all")]
         include_archived: bool,
     },
-    /// 查看主库（含天数、直属任务、年度热力图）
+    /// 查看重要日（含天数、直属任务、年度热力图）
     Show { id: String },
-    /// 更新主库
+    /// 更新重要日
     Update {
         id: String,
         #[arg(long)]
@@ -252,17 +264,17 @@ enum LibraryCmd {
         #[arg(long)]
         anchor: Option<String>,
     },
-    /// 归档主库（必须选择直属任务处置方式）
+    /// 归档重要日（必须选择直属任务处置方式）
     Archive {
         id: String,
-        /// keep=保留归属 / detach=转独立 / move-to=移到其他主库
+        /// keep=保留归属 / detach=转独立 / move-to=移到其他重要日
         #[arg(long)]
         mode: String,
-        /// mode=move-to 时的目标主库 id
+        /// mode=move-to 时的目标重要日 id
         #[arg(long)]
         to: Option<String>,
     },
-    /// 恢复已归档主库
+    /// 恢复已归档重要日
     Restore { id: String },
 }
 
@@ -606,9 +618,35 @@ fn parse_card_style(s: &str) -> CoreResult<CardStyle> {
         .ok_or_else(|| CoreError::Validation(format!("无效卡片样式 '{s}'（day|week|month|year）")))
 }
 
+/// 解析循环类型与星期集（004）。CLI 层要求 weekly 显式给出非空 --weekdays。
+fn parse_recurrence(kind: &str, weekdays: Option<Vec<u8>>) -> CoreResult<Recurrence> {
+    match kind {
+        "daily" => Ok(Recurrence::Daily),
+        "once" => Ok(Recurrence::Once),
+        "monthly" => Ok(Recurrence::Monthly),
+        "yearly" => Ok(Recurrence::Yearly),
+        "weekly" => {
+            let mut ws = weekdays.unwrap_or_default();
+            ws.retain(|w| (1..=7).contains(w));
+            if ws.is_empty() {
+                return Err(CoreError::Validation(
+                    "weekly 循环需要 --weekdays（1=周一…7=周日，逗号分隔，如 --weekdays 1,3,5）"
+                        .into(),
+                ));
+            }
+            ws.sort_unstable();
+            ws.dedup();
+            Ok(Recurrence::Weekly { weekdays: ws })
+        }
+        other => Err(CoreError::Validation(format!(
+            "无效循环类型 '{other}'（daily|weekly|monthly|yearly|once）"
+        ))),
+    }
+}
+
 fn parse_library_kind(s: &str) -> CoreResult<LibraryKind> {
     LibraryKind::parse(s).ok_or_else(|| {
-        CoreError::Validation(format!("无效主库类型 '{s}'（anniversary|countdown）"))
+        CoreError::Validation(format!("无效重要日类型 '{s}'（anniversary|countdown）"))
     })
 }
 
@@ -672,6 +710,8 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
             icon,
             color,
             card_style,
+            recurrence,
+            weekdays,
             project,
             library,
             stdin,
@@ -696,6 +736,15 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
                 if let Some(s) = v["card_style"].as_str() {
                     input.card_style = parse_card_style(s)?;
                 }
+                if let Some(rec) = v["recurrence"].as_object() {
+                    let kind = rec.get("kind").and_then(|k| k.as_str()).unwrap_or("daily");
+                    let ws = rec.get("weekdays").and_then(|w| w.as_array()).map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_u64().map(|n| n as u8))
+                            .collect()
+                    });
+                    input.recurrence = parse_recurrence(kind, ws)?;
+                }
                 input.project_id = v["project"]
                     .as_str()
                     .or(v["project_id"].as_str())
@@ -719,6 +768,9 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
                 if let Some(s) = card_style {
                     input.card_style = parse_card_style(&s)?;
                 }
+                if let Some(kind) = &recurrence {
+                    input.recurrence = parse_recurrence(kind, weekdays.clone())?;
+                }
                 input.project_id = project;
                 input.library_id = library;
             }
@@ -736,6 +788,8 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
             icon,
             color,
             card_style,
+            recurrence,
+            weekdays,
             project,
             clear_project,
         } => {
@@ -750,6 +804,17 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
                 card_style: match card_style.as_deref() {
                     Some(s) => Some(parse_card_style(s)?),
                     None => None,
+                },
+                recurrence: match &recurrence {
+                    Some(kind) => Some(parse_recurrence(kind, weekdays.clone())?),
+                    None => {
+                        if weekdays.is_some() {
+                            return Err(CoreError::Validation(
+                                "--weekdays 需要与 --recurrence weekly 一起使用".into(),
+                            ));
+                        }
+                        None
+                    }
                 },
                 project_id: if clear_project {
                     Some(None)
@@ -962,7 +1027,7 @@ fn library_cmd(cmd: LibraryCmd) -> CoreResult<Out> {
             }
             let lib = library_service::create_library(&conn, &input, actor())?;
             Ok(Out {
-                text: format!("已创建主库 {}: {}", lib.id, lib.title),
+                text: format!("已创建重要日 {}: {}", lib.id, lib.title),
                 data: json!(lib),
             })
         }
@@ -971,7 +1036,7 @@ fn library_cmd(cmd: LibraryCmd) -> CoreResult<Out> {
             let items = library_service::list_library_items(&conn, include_archived)?;
             let mut text = String::new();
             if items.is_empty() {
-                text.push_str("（无主库）");
+                text.push_str("（无重要日）");
             } else {
                 for it in &items {
                     let days = match it.day_info.display_kind.as_str() {
@@ -1041,7 +1106,7 @@ fn library_cmd(cmd: LibraryCmd) -> CoreResult<Out> {
             };
             let lib = library_service::update_library(&conn, &lid, &input, actor())?;
             Ok(Out {
-                text: format!("已更新主库 {}: {}", lib.id, lib.title),
+                text: format!("已更新重要日 {}: {}", lib.id, lib.title),
                 data: json!(lib),
             })
         }
@@ -1064,7 +1129,7 @@ fn library_cmd(cmd: LibraryCmd) -> CoreResult<Out> {
             };
             let lib = library_service::archive_library(&conn, &lid, m, to_id.as_deref(), actor())?;
             Ok(Out {
-                text: format!("已归档主库 {}: {}", lib.id, lib.title),
+                text: format!("已归档重要日 {}: {}", lib.id, lib.title),
                 data: json!(lib),
             })
         }
@@ -1073,7 +1138,7 @@ fn library_cmd(cmd: LibraryCmd) -> CoreResult<Out> {
             let lid = util::resolve_library_id(&conn, &id)?;
             let lib = library_service::restore_library(&conn, &lid, actor())?;
             Ok(Out {
-                text: format!("已恢复主库 {}: {}", lib.id, lib.title),
+                text: format!("已恢复重要日 {}: {}", lib.id, lib.title),
                 data: json!(lib),
             })
         }

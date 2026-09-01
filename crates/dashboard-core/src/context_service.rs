@@ -92,6 +92,26 @@ pub fn today_task_views(conn: &Connection) -> CoreResult<Vec<TaskDayView>> {
     Ok(views)
 }
 
+/// 任务墙视图：全部启用任务的当日视图（**含**今天不适用者）。
+/// Today 只看今日适用；任务墙要展示"存在但今天轮空"的卡（否则每周任务
+/// 在非适用日会从任务页整卡消失）。顺序按创建时间升序。
+pub fn wall_task_views(conn: &Connection) -> CoreResult<Vec<TaskDayView>> {
+    let tasks = ds::task_repo::list(
+        conn,
+        &ds::task_repo::TaskQuery {
+            status: Some(TaskStatus::Active),
+            limit: 10_000,
+            ..Default::default()
+        },
+    )?;
+    let mut views = Vec::with_capacity(tasks.len());
+    for t in tasks {
+        views.push(crate::checkin_service::task_day_view(conn, &t.id)?);
+    }
+    views.sort_by_key(|v| v.task.created_at);
+    Ok(views)
+}
+
 /// 近 7 天已错过天数（所有启用任务合计）。
 pub fn missed_days_last_7d(conn: &Connection) -> CoreResult<i64> {
     let today = local_today();
@@ -99,6 +119,7 @@ pub fn missed_days_last_7d(conn: &Connection) -> CoreResult<i64> {
     let tasks = ds::task_repo::list(
         conn,
         &ds::task_repo::TaskQuery {
+            status: Some(TaskStatus::Active),
             limit: 10_000,
             ..Default::default()
         },
@@ -110,8 +131,13 @@ pub fn missed_days_last_7d(conn: &Connection) -> CoreResult<i64> {
                 .into_iter()
                 .collect();
         for day in crate::logical_day::days_inclusive(&from, &today)? {
-            let target = ds::period_repo::target_on(conn, &t.id, &day)?.map(|p| p.target);
-            let applicable = ds::period_repo::is_active_on(conn, &t.id, &day)?;
+            let period = ds::period_repo::target_on(conn, &t.id, &day)?;
+            let target = period.as_ref().map(|p| p.target);
+            let applicable = ds::period_repo::is_active_on(conn, &t.id, &day)?
+                && period
+                    .as_ref()
+                    .map(|p| p.recurrence.matches(&p.start_day, &day))
+                    .unwrap_or(false);
             let actual = counts.get(&day).copied().unwrap_or(0).max(0);
             let state = crate::day_state::eval_day_state(applicable, target, actual, &day, &today);
             if state == crate::day_state::TaskDayState::Missed {

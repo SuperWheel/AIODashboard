@@ -1,4 +1,4 @@
-//! Date Library Repository：日期主库（纪念日 / 倒计时日）。
+//! Date Library Repository：重要日（纪念日 / 倒计时日）。
 
 use chrono::Utc;
 use dashboard_domain::{id_prefix, new_id, DateLibrary, LibraryKind, LibraryStatus};

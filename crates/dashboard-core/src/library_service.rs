@@ -1,4 +1,4 @@
-//! Date Library 用例：主库 CRUD / 归档三选一 / 任务归属。
+//! Date Library 用例：重要日 CRUD / 归档三选一 / 任务归属。
 
 use dashboard_domain::{Actor, DateLibrary, LibraryKind, LibraryStatus, Task};
 use dashboard_storage::{library_repo, period_repo, task_repo};
@@ -32,11 +32,11 @@ pub struct UpdateLibraryInput {
 fn validate_title(title: &str) -> CoreResult<String> {
     let t = title.trim();
     if t.is_empty() {
-        return Err(CoreError::Validation("主库标题不能为空".into()));
+        return Err(CoreError::Validation("重要日标题不能为空".into()));
     }
     if t.chars().count() > 200 {
         return Err(CoreError::Validation(
-            "主库标题过长（最多 200 字符）".into(),
+            "重要日标题过长（最多 200 字符）".into(),
         ));
     }
     Ok(t.to_string())
@@ -136,18 +136,18 @@ pub fn update_library(
     Ok(updated)
 }
 
-/// 归档主库时直属任务的处置方式。
+/// 归档重要日时直属任务的处置方式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveTaskMode {
-    /// 保留归属（任务随主库一起不出现在 Today？不——保留归属区间但主库归档）
+    /// 保留归属（任务随重要日一起不出现在 Today？不——保留归属区间但重要日归档）
     Keep,
     /// 转独立任务（闭合归属区间）
     Detach,
-    /// 移动到另一个活动主库
+    /// 移动到另一个活动重要日
     MoveTo,
 }
 
-/// 归档主库（三选一处置直属任务，单事务）。
+/// 归档重要日（三选一处置直属任务，单事务）。
 pub fn archive_library(
     conn: &Connection,
     id: &str,
@@ -164,17 +164,17 @@ pub fn archive_library(
 
     if mode == ArchiveTaskMode::MoveTo {
         let target =
-            move_to.ok_or_else(|| CoreError::Validation("move_to 模式需要目标主库 id".into()))?;
+            move_to.ok_or_else(|| CoreError::Validation("move_to 模式需要目标重要日 id".into()))?;
         let target_lib = get_library(conn, target)?;
         if target_lib.status != LibraryStatus::Active {
-            return Err(CoreError::Validation("目标主库已归档".into()));
+            return Err(CoreError::Validation("目标重要日已归档".into()));
         }
         if target_lib.id == id {
             return Err(CoreError::Validation("不能移动到自身".into()));
         }
     }
 
-    // 单事务：处置任务 + 归档主库，失败整体回滚
+    // 单事务：处置任务 + 归档重要日，失败整体回滚
     conn.execute("SAVEPOINT archive_library", [])?;
     let result = (|| -> CoreResult<()> {
         for tid in &task_ids {
@@ -257,7 +257,7 @@ pub fn restore_library(conn: &Connection, id: &str, actor: Actor) -> CoreResult<
     get_library(conn, id)
 }
 
-/// 任务移入主库（今日起生效；此前归属闭合，历史留原库）。library_id=None 表示移出为独立任务。
+/// 任务移入重要日（今日起生效；此前归属闭合，历史留原库）。library_id=None 表示移出为独立任务。
 pub fn move_task(
     conn: &Connection,
     task_id: &str,
@@ -275,7 +275,7 @@ pub fn move_task(
     if let Some(lid) = library_id {
         let lib = get_library(conn, lid)?;
         if lib.status != LibraryStatus::Active {
-            return Err(CoreError::Validation("目标主库已归档".into()));
+            return Err(CoreError::Validation("目标重要日已归档".into()));
         }
     }
 
@@ -300,7 +300,7 @@ pub fn move_task(
     crate::task_service::get_task(conn, task_id)
 }
 
-/// 主库当前直属任务（启用中的）。
+/// 重要日当前直属任务（启用中的）。
 pub fn library_tasks(conn: &Connection, library_id: &str) -> CoreResult<Vec<Task>> {
     get_library(conn, library_id)?;
     let ids = period_repo::library_current_task_ids(conn, library_id)?;
@@ -313,7 +313,7 @@ pub fn library_tasks(conn: &Connection, library_id: &str) -> CoreResult<Vec<Task
     Ok(tasks)
 }
 
-/// 主库天数显示数据：纪念日=已过天数；倒计时=剩余/逾期。
+/// 重要日天数显示数据：纪念日=已过天数；倒计时=剩余/逾期。
 #[derive(Debug, Serialize)]
 pub struct LibraryDayInfo {
     /// 纪念日：第 N 天（锚点当天为第 1 天）；倒计时：还剩 N 天（锚点当天为 0）
@@ -345,7 +345,7 @@ pub fn day_info(lib: &DateLibrary, today: &str) -> CoreResult<LibraryDayInfo> {
     })
 }
 
-/// 主库列表视图（带天数信息）。
+/// 重要日列表视图（带天数信息）。
 #[derive(Debug, Serialize)]
 pub struct LibraryListItem {
     #[serde(flatten)]

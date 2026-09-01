@@ -94,6 +94,7 @@ pub fn process_to_note(conn: &Connection, id: &str, actor: Actor) -> CoreResult<
         Some(id),
         &serde_json::json!({ "to": "note", "note_id": note.id }),
     );
+    snapshot::refresh(conn);
     Ok(ProcessReport {
         inbox_id: id.to_string(),
         created_type: "note",

@@ -1,7 +1,31 @@
-//! Period Repository：目标区间 / 活动区间 / 主库归属区间。
+//! Period Repository：目标区间 / 活动区间 / 重要日归属区间。
 
-use dashboard_domain::{id_prefix, new_id, MembershipPeriod, TaskActivityPeriod, TaskTargetPeriod};
+use dashboard_domain::{
+    id_prefix, new_id, MembershipPeriod, Recurrence, TaskActivityPeriod, TaskTargetPeriod,
+};
 use rusqlite::{params, Connection, Row};
+
+/// 循环规则列的编码：Daily 存 NULL（V3 存量语义），其余存 domain JSON。
+fn encode_recurrence(rec: &Recurrence) -> Option<String> {
+    if *rec == Recurrence::Daily {
+        None
+    } else {
+        Some(serde_json::to_string(rec).unwrap_or_else(|_| "{}".into()))
+    }
+}
+
+fn decode_recurrence(raw: Option<String>) -> rusqlite::Result<Recurrence> {
+    match raw {
+        None => Ok(Recurrence::Daily),
+        Some(s) => serde_json::from_str(&s).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Text,
+                format!("invalid recurrence: {e}").into(),
+            )
+        }),
+    }
+}
 
 fn map_target(row: &Row) -> rusqlite::Result<TaskTargetPeriod> {
     Ok(TaskTargetPeriod {
@@ -10,6 +34,7 @@ fn map_target(row: &Row) -> rusqlite::Result<TaskTargetPeriod> {
         target: row.get(2)?,
         start_day: row.get(3)?,
         end_day: row.get(4)?,
+        recurrence: decode_recurrence(row.get(5)?)?,
     })
 }
 
@@ -32,7 +57,7 @@ fn map_membership(row: &Row) -> rusqlite::Result<MembershipPeriod> {
     })
 }
 
-const TARGET_COLS: &str = "id, task_id, target, start_day, end_day";
+const TARGET_COLS: &str = "id, task_id, target, start_day, end_day, recurrence";
 const ACTIVITY_COLS: &str = "id, task_id, start_day, end_day";
 const MEMBERSHIP_COLS: &str = "id, task_id, library_id, start_day, end_day";
 
@@ -69,6 +94,7 @@ pub fn insert_target(
     conn: &Connection,
     task_id: &str,
     target: i64,
+    recurrence: &Recurrence,
     start_day: &str,
     end_day: Option<&str>,
 ) -> rusqlite::Result<TaskTargetPeriod> {
@@ -78,11 +104,19 @@ pub fn insert_target(
         target,
         start_day: start_day.to_string(),
         end_day: end_day.map(|s| s.to_string()),
+        recurrence: recurrence.clone(),
     };
     conn.execute(
-        "INSERT INTO task_target_periods (id, task_id, target, start_day, end_day)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![p.id, p.task_id, p.target, p.start_day, p.end_day],
+        "INSERT INTO task_target_periods (id, task_id, target, start_day, end_day, recurrence)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            p.id,
+            p.task_id,
+            p.target,
+            p.start_day,
+            p.end_day,
+            encode_recurrence(&p.recurrence),
+        ],
     )?;
     Ok(p)
 }
@@ -164,7 +198,7 @@ pub fn list_memberships(
     rows.collect()
 }
 
-/// 某日生效的归属（一个任务同日最多一个主库）。
+/// 某日生效的归属（一个任务同日最多一个重要日）。
 pub fn membership_on(
     conn: &Connection,
     task_id: &str,
@@ -216,7 +250,7 @@ pub fn close_open_membership(
     )
 }
 
-/// 某日主库的全部有效直属任务 id。
+/// 某日重要日的全部有效直属任务 id。
 pub fn library_task_ids_on(
     conn: &Connection,
     library_id: &str,
@@ -230,7 +264,7 @@ pub fn library_task_ids_on(
     rows.collect()
 }
 
-/// 主库当前（开放区间）直属任务 id。
+/// 重要日当前（开放区间）直属任务 id。
 pub fn library_current_task_ids(
     conn: &Connection,
     library_id: &str,
@@ -243,7 +277,7 @@ pub fn library_current_task_ids(
     rows.collect()
 }
 
-/// 某日主库归属记录（供主库热力图逐日聚合）。
+/// 某日重要日归属记录（供重要日热力图逐日聚合）。
 pub fn memberships_covering(
     conn: &Connection,
     library_id: &str,
@@ -257,7 +291,7 @@ pub fn memberships_covering(
     rows.collect()
 }
 
-/// 列出某任务在 [from_day, to_day] 范围内与任一主库相关的归属区间（供批量计算）。
+/// 列出某任务在 [from_day, to_day] 范围内与任一重要日相关的归属区间（供批量计算）。
 pub fn memberships_in_range(
     conn: &Connection,
     task_id: &str,
@@ -273,7 +307,7 @@ pub fn memberships_in_range(
     rows.collect()
 }
 
-/// 列出主库在 [from_day, to_day] 范围内出现过的归属区间（供主库热力图批量计算）。
+/// 列出重要日在 [from_day, to_day] 范围内出现过的归属区间（供重要日热力图批量计算）。
 pub fn library_memberships_in_range(
     conn: &Connection,
     library_id: &str,

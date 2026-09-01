@@ -37,6 +37,13 @@ fn get_today() -> R<core::context_service::TodayContext> {
     core::context_service::context_today(&c).map_err(|e| e.to_string())
 }
 
+/// 任务墙：全部启用任务的当日视图（含今天不适用者，004）。
+#[tauri::command]
+fn task_wall_views() -> R<Vec<core::checkin_service::TaskDayView>> {
+    let c = conn()?;
+    core::context_service::wall_task_views(&c).map_err(|e| e.to_string())
+}
+
 /// scope: "all" | "active" | "archived"
 #[tauri::command]
 fn list_tasks(scope: Option<String>) -> R<Vec<Task>> {
@@ -54,7 +61,10 @@ fn list_tasks(scope: Option<String>) -> R<Vec<Task>> {
     core::task_service::list_tasks(&c, &q).map_err(|e| e.to_string())
 }
 
+// Tauri 只对命令顶层参数做 camelCase↔snake_case 转换，嵌套 struct 走纯 serde，
+// 必须显式 rename_all，否则前端发的 camelCase 键会被静默丢弃。
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CreateTaskParams {
     title: String,
     target: Option<i64>,
@@ -62,9 +72,33 @@ struct CreateTaskParams {
     icon: Option<String>,
     color: Option<String>,
     card_style: Option<String>,
+    recurrence: Option<String>,
+    weekdays: Option<Vec<u8>>,
     project_id: Option<String>,
     library_id: Option<String>,
     actor: Option<String>,
+}
+
+/// 解析前端循环参数（kind + weekdays → domain::Recurrence）。
+/// 前端 weekly 始终携带非空 weekdays；空集回退为锚点星期。
+fn parse_recurrence(kind: &str, weekdays: Option<Vec<u8>>) -> R<dashboard_domain::Recurrence> {
+    use dashboard_domain::Recurrence;
+    match kind {
+        "daily" => Ok(Recurrence::Daily),
+        "once" => Ok(Recurrence::Once),
+        "monthly" => Ok(Recurrence::Monthly),
+        "yearly" => Ok(Recurrence::Yearly),
+        "weekly" => {
+            let mut ws = weekdays.unwrap_or_default();
+            ws.retain(|w| (1..=7).contains(w));
+            ws.sort_unstable();
+            ws.dedup();
+            Ok(Recurrence::Weekly { weekdays: ws })
+        }
+        other => Err(format!(
+            "无效循环类型: {other}（daily|weekly|monthly|yearly|once）"
+        )),
+    }
 }
 
 #[tauri::command]
@@ -93,10 +127,14 @@ fn create_task(params: CreateTaskParams) -> R<Task> {
     if let Some(s) = style {
         input.card_style = s;
     }
+    if let Some(kind) = &params.recurrence {
+        input.recurrence = parse_recurrence(kind, params.weekdays.clone())?;
+    }
     core::task_service::create_task(&c, &input, actor_from(params.actor)).map_err(|e| e.to_string())
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct UpdateTaskParams {
     id: String,
     title: Option<String>,
@@ -105,7 +143,11 @@ struct UpdateTaskParams {
     icon: Option<String>,
     color: Option<String>,
     card_style: Option<String>,
-    project_id: Option<Option<String>>,
+    project_id: Option<String>,
+    /// JSON null 无法区分"不变"与"清空"，显式清空项目归属用这个标志。
+    clear_project: Option<bool>,
+    recurrence: Option<String>,
+    weekdays: Option<Vec<u8>>,
     actor: Option<String>,
 }
 
@@ -117,6 +159,16 @@ fn update_task(params: UpdateTaskParams) -> R<Task> {
         ),
         None => None,
     };
+    // projectId 有值 = 设为新项目；clearProject = 移出项目；两者都不传 = 不变。
+    let project_id = match (params.clear_project.unwrap_or(false), params.project_id) {
+        (true, _) => Some(None),
+        (false, Some(p)) => Some(Some(p)),
+        (false, None) => None,
+    };
+    let recurrence = match &params.recurrence {
+        Some(kind) => Some(parse_recurrence(kind, params.weekdays.clone())?),
+        None => None,
+    };
     let c = conn()?;
     let input = core::task_service::UpdateTaskInput {
         title: params.title,
@@ -125,7 +177,8 @@ fn update_task(params: UpdateTaskParams) -> R<Task> {
         unit: params.unit,
         daily_target: params.target,
         card_style: style,
-        project_id: params.project_id,
+        recurrence,
+        project_id,
     };
     core::task_service::update_task(&c, &params.id, &input, actor_from(params.actor))
         .map_err(|e| e.to_string())
@@ -219,7 +272,7 @@ fn create_library(
     actor: Option<String>,
 ) -> R<dashboard_domain::DateLibrary> {
     let k = dashboard_domain::LibraryKind::parse(&kind)
-        .ok_or_else(|| format!("无效主库类型: {kind}"))?;
+        .ok_or_else(|| format!("无效重要日类型: {kind}"))?;
     let c = conn()?;
     let input = core::library_service::CreateLibraryInput {
         title,
@@ -294,7 +347,14 @@ fn library_heatmap(
         .map_err(|e| e.to_string())
 }
 
-/// 移动任务到主库（library_id=None = 移出为独立任务）。
+/// 全局年度综合热力图（所有任务聚合，首页用）。
+#[tauri::command]
+fn global_year_heatmap(anchor: Option<String>) -> R<core::overview_service::GlobalYearHeatmap> {
+    let c = conn()?;
+    core::overview_service::global_year_heatmap(&c, anchor.as_deref()).map_err(|e| e.to_string())
+}
+
+/// 移动任务到重要日（library_id=None = 移出为独立任务）。
 #[tauri::command]
 fn move_task_library(id: String, library_id: Option<String>, actor: Option<String>) -> R<Task> {
     let c = conn()?;
@@ -587,6 +647,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_today,
+            task_wall_views,
             list_tasks,
             create_task,
             update_task,
@@ -604,6 +665,7 @@ pub fn run() {
             restore_library,
             library_tasks,
             library_heatmap,
+            global_year_heatmap,
             move_task_library,
             list_projects,
             create_project,

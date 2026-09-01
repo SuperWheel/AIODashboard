@@ -8,10 +8,12 @@
 //! - "1"：todo 式任务（due_at / todo·doing·done）
 //! - "2"：打卡式任务（task-checkin-cards，变更包 003）——Task 字段重构、
 //!   新增 checkin/library 命令组、complete/reopen 语义重映射（deprecated）
+//! - "3"：任务循环规则（task-recurrence，变更包 004）——Task 增 recurrence 字段、
+//!   task create/update 增 --recurrence/--weekdays、SCHEMA_V4 目标区间加循环列
 
 use serde::Serialize;
 
-pub const SCHEMA_VERSION: &str = "2";
+pub const SCHEMA_VERSION: &str = "3";
 
 /// 标准 Exit Code。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

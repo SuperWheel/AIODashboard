@@ -32,6 +32,8 @@ fn map_task(row: &Row) -> rusqlite::Result<Task> {
         unit: row.get(5)?,
         card_style: CardStyle::parse(&card_raw)
             .ok_or_else(|| invalid(6, "card style", &card_raw))?,
+        // 当日循环规则由 core 读侧回填（存储无此列）
+        recurrence: Default::default(),
         project_id: row.get(7)?,
         created_at: read_time(row, 8)?,
         updated_at: read_time(row, 9)?,
@@ -128,6 +130,7 @@ pub fn create(
         color_hex: color_hex.to_string(),
         unit: unit.to_string(),
         card_style,
+        recurrence: Default::default(),
         project_id: project_id.map(|s| s.to_string()),
         created_at: now,
         updated_at: now,

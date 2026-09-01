@@ -1,6 +1,6 @@
 //! Task 用例：创建 / 查询 / 更新 / 归档 / 删除（长期打卡任务）。
 
-use dashboard_domain::{Actor, CardStyle, Task, TaskStatus, TASK_COLOR_PRESETS};
+use dashboard_domain::{Actor, CardStyle, Recurrence, Task, TaskStatus, TASK_COLOR_PRESETS};
 use dashboard_storage::{period_repo, project_repo, task_repo, task_repo::TaskQuery};
 use serde::Serialize;
 
@@ -16,8 +16,10 @@ pub struct CreateTaskInput {
     /// 每日目标次数（1–999）
     pub daily_target: i64,
     pub card_style: CardStyle,
+    /// 循环规则（默认每日）
+    pub recurrence: Recurrence,
     pub project_id: Option<String>,
-    /// 创建时直接归入的主库
+    /// 创建时直接归入的重要日
     pub library_id: Option<String>,
 }
 
@@ -30,6 +32,7 @@ impl Default for CreateTaskInput {
             unit: String::new(),
             daily_target: 1,
             card_style: CardStyle::Day,
+            recurrence: Recurrence::Daily,
             project_id: None,
             library_id: None,
         }
@@ -45,6 +48,8 @@ pub struct UpdateTaskInput {
     /// 修改每日目标（从当前逻辑日起生效）
     pub daily_target: Option<i64>,
     pub card_style: Option<CardStyle>,
+    /// 修改循环规则（明天起新区间生效，历史口径不变）
+    pub recurrence: Option<Recurrence>,
     /// Some(None) 表示移出项目
     pub project_id: Option<Option<String>>,
 }
@@ -120,9 +125,9 @@ pub fn create_task(
         input.card_style,
         input.project_id.as_deref(),
     )?;
-    // 开放活动区间 + 首个目标区间（今天起生效）
+    // 开放活动区间 + 首个目标区间（今天起生效；循环锚点 = 今天）
     period_repo::insert_activity(conn, &task.id, &today, None)?;
-    period_repo::insert_target(conn, &task.id, target, &today, None)?;
+    period_repo::insert_target(conn, &task.id, target, &input.recurrence, &today, None)?;
     if let Some(lid) = &input.library_id {
         period_repo::insert_membership(conn, &task.id, lid, &today)?;
     }
@@ -134,18 +139,39 @@ pub fn create_task(
         "task.create",
         "task",
         Some(&task.id),
-        &serde_json::json!({ "title": task.title, "daily_target": target }),
+        &serde_json::json!({
+            "title": task.title,
+            "daily_target": target,
+            "recurrence": serde_json::to_value(&input.recurrence).unwrap_or(serde_json::Value::Null),
+        }),
     );
     snapshot::refresh(conn);
+    let mut task = task;
+    task.recurrence = input.recurrence.clone();
     Ok(task)
 }
 
 pub fn get_task(conn: &rusqlite::Connection, id: &str) -> CoreResult<Task> {
-    task_repo::get(conn, id)?.ok_or_else(|| CoreError::NotFound(format!("task {id}")))
+    let mut t =
+        task_repo::get(conn, id)?.ok_or_else(|| CoreError::NotFound(format!("task {id}")))?;
+    fill_current_recurrence(conn, &mut t)?;
+    Ok(t)
 }
 
 pub fn list_tasks(conn: &rusqlite::Connection, query: &TaskQuery) -> CoreResult<Vec<Task>> {
-    Ok(task_repo::list(conn, query)?)
+    let mut tasks = task_repo::list(conn, query)?;
+    for t in &mut tasks {
+        fill_current_recurrence(conn, t)?;
+    }
+    Ok(tasks)
+}
+
+/// 回填 Task.recurrence = 当日生效目标区间的循环规则（存储无此列，读侧组装）。
+fn fill_current_recurrence(conn: &rusqlite::Connection, t: &mut Task) -> CoreResult<()> {
+    if let Some(p) = period_repo::target_on(conn, &t.id, &local_today())? {
+        t.recurrence = p.recurrence;
+    }
+    Ok(())
 }
 
 /// 归档任务：关闭当前活动区间（今日为最后一个有效日）。
@@ -239,15 +265,32 @@ pub fn update_task(
     }
     task_repo::update(conn, id, &patch)?;
 
-    // 修改每日目标：闭合当前区间，明天起生效新区间（今天仍按旧目标，避免今日已打卡数据口径漂移）
-    if let Some(target) = input.daily_target {
-        let target = validate_target(target)?;
+    // 修改每日目标/循环规则：闭合当前区间，明天起新区间生效（今天仍按旧口径，
+    // 避免今日已打卡数据在新旧规则间漂移）。两者只滚动一次区间。
+    if input.daily_target.is_some() || input.recurrence.is_some() {
         let today = local_today();
-        let current = period_repo::target_on(conn, id, &today)?.map(|p| p.target);
-        if current != Some(target) {
+        let current = period_repo::target_on(conn, id, &today)?;
+        let new_target = input.daily_target.map(validate_target).transpose()?;
+        let target_changed = new_target
+            .map(|t| current.as_ref().map(|c| c.target) != Some(t))
+            .unwrap_or(false);
+        let rec_changed = input
+            .recurrence
+            .as_ref()
+            .map(|r| current.as_ref().map(|c| &c.recurrence) != Some(r))
+            .unwrap_or(false);
+        if target_changed || rec_changed {
+            let target =
+                new_target.unwrap_or_else(|| current.as_ref().map(|c| c.target).unwrap_or(1));
+            let rec = input.recurrence.clone().unwrap_or_else(|| {
+                current
+                    .as_ref()
+                    .map(|c| c.recurrence.clone())
+                    .unwrap_or_default()
+            });
             let start = crate::logical_day::add_days(&today, 1)?;
             period_repo::close_open_target(conn, id, &start)?;
-            period_repo::insert_target(conn, id, target, &start, None)?;
+            period_repo::insert_target(conn, id, target, &rec, &start, None)?;
         }
     }
 

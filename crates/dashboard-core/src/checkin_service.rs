@@ -17,7 +17,7 @@ pub struct TaskDayView {
     /// 当日净次数
     pub count: i64,
     pub state: String,
-    /// 当前生效的主库 id（无 = 独立任务）
+    /// 当前生效的重要日 id（无 = 独立任务）
     pub library_id: Option<String>,
     /// 是否存在可撤销的最近一次操作
     pub can_undo: bool,
@@ -30,19 +30,28 @@ fn require_applicable_today(conn: &Connection, task: &Task, today: &str) -> Core
     if !period_repo::is_active_on(conn, &task.id, today)? {
         return Err(CoreError::Validation("任务今天不适用，不能打卡".into()));
     }
-    let target = period_repo::target_on(conn, &task.id, today)?.map(|p| p.target);
-    match target {
-        Some(t) if t > 0 => Ok(t),
-        _ => Err(CoreError::Validation(
-            "任务今天没有有效目标，不能打卡".into(),
-        )),
+    let period = period_repo::target_on(conn, &task.id, today)?
+        .ok_or_else(|| CoreError::Validation("任务今天没有有效目标，不能打卡".into()))?;
+    if !period.recurrence.matches(&period.start_day, today) {
+        return Err(CoreError::Validation("任务今天不适用，不能打卡".into()));
     }
+    if period.target <= 0 {
+        return Err(CoreError::Validation(
+            "任务今天没有有效目标，不能打卡".into(),
+        ));
+    }
+    Ok(period.target)
 }
 
 fn build_day_view(conn: &Connection, task: Task, today: &str) -> CoreResult<TaskDayView> {
-    let target = period_repo::target_on(conn, &task.id, today)?.map(|p| p.target);
+    let period = period_repo::target_on(conn, &task.id, today)?;
+    let target = period.as_ref().map(|p| p.target);
     let applicable = task.status == dashboard_domain::TaskStatus::Active
-        && period_repo::is_active_on(conn, &task.id, today)?;
+        && period_repo::is_active_on(conn, &task.id, today)?
+        && period
+            .as_ref()
+            .map(|p| p.recurrence.matches(&p.start_day, today))
+            .unwrap_or(false);
     let count = completion_repo::day_count(conn, &task.id, today)?;
     let state = crate::day_state::eval_day_state(applicable, target, count, today, today);
     let library_id = period_repo::membership_on(conn, &task.id, today)?.map(|m| m.library_id);
@@ -56,6 +65,22 @@ fn build_day_view(conn: &Connection, task: Task, today: &str) -> CoreResult<Task
         library_id,
         can_undo,
     })
+}
+
+/// 一次性任务打卡达标 → 自动归档（004 决策：完成即终态，历史保留）。
+/// 归档后返回的视图仍按归档前状态展示（调用方先 build 再归档）。
+fn auto_archive_once_on_completion(
+    conn: &Connection,
+    task: &Task,
+    view: &TaskDayView,
+    actor: Actor,
+) -> CoreResult<()> {
+    if task.recurrence == dashboard_domain::Recurrence::Once
+        && view.state == crate::day_state::TaskDayState::Completed.as_str()
+    {
+        crate::task_service::archive_task(conn, &task.id, actor)?;
+    }
+    Ok(())
 }
 
 pub fn task_day_view(conn: &Connection, task_id: &str) -> CoreResult<TaskDayView> {
@@ -100,14 +125,16 @@ pub fn record(
     log_activity(
         conn,
         chrono::Utc::now(),
-        actor,
+        actor.clone(),
         "task.checkin",
         "task",
         Some(task_id),
         &serde_json::json!({ "logical_day": today }),
     );
     snapshot::refresh(conn);
-    build_day_view(conn, task, &today)
+    let v = build_day_view(conn, task.clone(), &today)?;
+    auto_archive_once_on_completion(conn, &task, &v, actor)?;
+    Ok(v)
 }
 
 /// 减少一次（补偿当日最近一条未被补偿的正向记录）。幂等同上。
@@ -179,6 +206,8 @@ pub fn undo(
 
     let target_record = completion_repo::latest_uncompensated_positive_any_day(conn, task_id)?
         .ok_or_else(|| CoreError::Validation("没有可撤销的打卡记录".into()))?;
+    // 补偿必须记在被撤记录的逻辑日：日聚合全部按 logical_day 分组，
+    // 记到"今天"会既改不动历史日、又污染今天的账面。
     completion_repo::append(
         conn,
         &completion_repo::NewCompletion {
@@ -187,7 +216,7 @@ pub fn undo(
             value: -target_record.value,
             kind: CompletionKind::Undo,
             compensates_record_id: Some(target_record.id.clone()),
-            logical_day: today.clone(),
+            logical_day: target_record.logical_day.clone(),
             source: actor.as_str(),
         },
     )?;
@@ -198,7 +227,10 @@ pub fn undo(
         "task.undo",
         "task",
         Some(task_id),
-        &serde_json::json!({ "reversed": target_record.id }),
+        &serde_json::json!({
+            "reversed": target_record.id,
+            "logical_day": target_record.logical_day,
+        }),
     );
     snapshot::refresh(conn);
     build_day_view(conn, task, &today)
@@ -209,8 +241,10 @@ pub fn complete_today(conn: &Connection, task_id: &str, actor: Actor) -> CoreRes
     let task = crate::task_service::get_task(conn, task_id)?;
     let today = local_today();
     let target = require_applicable_today(conn, &task, &today)?;
-    let count = completion_repo::day_count(conn, task_id, &today)?;
-    let missing = target - count;
+    // 用未钳位的账面和算差额：day_count 的下限 0 会把历史负差额藏起来，
+    // 导致补录量不足、补满后仍显示未完成。
+    let sum = completion_repo::day_sum(conn, task_id, &today)?;
+    let missing = target - sum;
     if missing > 0 {
         completion_repo::append(
             conn,
@@ -227,7 +261,7 @@ pub fn complete_today(conn: &Connection, task_id: &str, actor: Actor) -> CoreRes
         log_activity(
             conn,
             chrono::Utc::now(),
-            actor,
+            actor.clone(),
             "task.checkin",
             "task",
             Some(task_id),
@@ -235,27 +269,33 @@ pub fn complete_today(conn: &Connection, task_id: &str, actor: Actor) -> CoreRes
         );
         snapshot::refresh(conn);
     }
-    build_day_view(conn, task, &today)
+    let v = build_day_view(conn, task.clone(), &today)?;
+    auto_archive_once_on_completion(conn, &task, &v, actor)?;
+    Ok(v)
 }
 
 pub fn reopen_today(conn: &Connection, task_id: &str, actor: Actor) -> CoreResult<TaskDayView> {
     let task = crate::task_service::get_task(conn, task_id)?;
     let today = local_today();
     require_applicable_today(conn, &task, &today)?;
-    let count = completion_repo::day_count(conn, task_id, &today)?;
-    if count > 0 {
+    // 逐条补偿当日所有未补偿正向记录。若只追加一条无指向的批量负记录，
+    // 原正向记录仍算"未补偿"，decrement/undo 会继续放行把账面挖成负数。
+    let records = completion_repo::uncompensated_positives_on(conn, task_id, &today)?;
+    for rec in &records {
         completion_repo::append(
             conn,
             &completion_repo::NewCompletion {
                 task_id: task_id.to_string(),
                 operation_id: dashboard_domain::new_id("op"),
-                value: -count,
+                value: -rec.value,
                 kind: CompletionKind::Undo,
-                compensates_record_id: None,
-                logical_day: today.clone(),
+                compensates_record_id: Some(rec.id.clone()),
+                logical_day: rec.logical_day.clone(),
                 source: actor.as_str(),
             },
         )?;
+    }
+    if !records.is_empty() {
         log_activity(
             conn,
             chrono::Utc::now(),
@@ -263,7 +303,7 @@ pub fn reopen_today(conn: &Connection, task_id: &str, actor: Actor) -> CoreResul
             "task.undo",
             "task",
             Some(task_id),
-            &serde_json::json!({ "logical_day": today, "via": "reopen_compat", "value": -count }),
+            &serde_json::json!({ "logical_day": today, "via": "reopen_compat", "records": records.len() }),
         );
         snapshot::refresh(conn);
     }

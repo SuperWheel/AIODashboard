@@ -120,6 +120,17 @@ pub fn counts_between(
     rows.collect()
 }
 
+/// 当日净计数（Σvalue，不钳位；需要真实账面差额时使用，如补满目标）。
+pub fn day_sum(conn: &Connection, task_id: &str, logical_day: &str) -> rusqlite::Result<i64> {
+    let sum: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(value), 0) FROM completion_records
+         WHERE task_id = ?1 AND logical_day = ?2",
+        params![task_id, logical_day],
+        |r| r.get(0),
+    )?;
+    Ok(sum)
+}
+
 /// 某任务当日最近一条未被补偿的正向记录（decrement 的补偿对象）。
 pub fn latest_uncompensated_positive(
     conn: &Connection,
@@ -140,6 +151,25 @@ pub fn latest_uncompensated_positive(
         map_record,
     )
     .optional()
+}
+
+/// 某任务当日全部未被补偿的正向记录（reopen 清零的补偿对象，新→旧）。
+pub fn uncompensated_positives_on(
+    conn: &Connection,
+    task_id: &str,
+    logical_day: &str,
+) -> rusqlite::Result<Vec<CompletionRecord>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLS} FROM completion_records c
+         WHERE c.task_id = ?1 AND c.logical_day = ?2 AND c.value > 0
+           AND NOT EXISTS (
+               SELECT 1 FROM completion_records x
+               WHERE x.compensates_record_id = c.id
+           )
+         ORDER BY c.created_at DESC, c.id DESC"
+    ))?;
+    let rows = stmt.query_map(params![task_id, logical_day], map_record)?;
+    rows.collect()
 }
 
 /// 某任务最近一条未被补偿的正向记录（undo 的目标；不限定当日）。
