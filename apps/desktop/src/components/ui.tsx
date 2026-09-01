@@ -24,15 +24,18 @@ export function Badge({ children, tone = "slate" }: { children: ReactNode; tone?
 
 export type BadgeTone = "slate" | "green" | "amber" | "red" | "blue" | "violet";
 
-/** 统一按钮：primary=主操作，violet=收件箱收集，ghost=次级操作。 */
+/** 统一按钮：primary=主操作，violet=收件箱收集，danger=破坏性操作，ghost=次级操作。 */
 export function Button({
   variant = "primary",
   className = "",
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "violet" | "ghost" }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "violet" | "danger" | "ghost";
+}) {
   const variants = {
     primary: "bg-accent text-onaccent hover:bg-accent/90",
     violet: "bg-violet text-onaccent hover:bg-violet/90",
+    danger: "bg-danger text-onaccent hover:bg-danger/90",
     ghost: "border border-line text-ink2 hover:bg-hover hover:text-ink",
   };
   return (

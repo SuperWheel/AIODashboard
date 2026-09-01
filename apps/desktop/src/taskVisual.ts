@@ -76,3 +76,23 @@ export const HEATMAP_LEGEND: { state: HeatmapState; label: string }[] = [
 export function genOpId(): string {
   return `op_${crypto.randomUUID()}`;
 }
+
+const WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"] as const;
+
+/** 循环规则的人类可读标签（004）：每天/每周一、三、五/每月/每年/一次性；daily 为空串。 */
+export function recurrenceLabel(rec: { kind: string; weekdays?: number[] } | undefined): string {
+  switch (rec?.kind) {
+    case "weekly": {
+      const ws = (rec.weekdays ?? []).slice().sort((a, b) => a - b);
+      return `每周${ws.map((w) => WEEKDAY_LABELS[w - 1] ?? "?").join("、")}`;
+    }
+    case "monthly":
+      return "每月";
+    case "yearly":
+      return "每年";
+    case "once":
+      return "一次性";
+    default:
+      return "";
+  }
+}

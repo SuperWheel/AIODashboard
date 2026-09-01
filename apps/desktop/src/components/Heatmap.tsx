@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { HeatmapDay, HeatmapState } from "../types";
+import type { AggregateHeatmapDay, HeatmapDay, HeatmapState } from "../types";
 import { fillIntensity, stateMarker, taskColor } from "../taskVisual";
 
 /**
@@ -134,6 +134,75 @@ export function HeatmapCell({
           />
         </svg>
       )}
+    </div>
+  );
+}
+
+/** 聚合热力图单日 hover 文案（重要日综合 / 全局首页共用）。 */
+export function aggregateDayText(d: AggregateHeatmapDay): string {
+  if (d.display_state === "rate") {
+    return `${d.logical_day}：完成率 ${Math.round((d.rate ?? 0) * 100)}%（${d.active_task_count} 个任务）`;
+  }
+  return `${d.logical_day}：${d.display_state === "future" ? "尚未到达" : "不适用"}`;
+}
+
+/** 聚合年度热力图（rate 色阶 0–100%）：重要日综合 / 全局首页共用。
+ *  color 支持 hex 预设或 CSS 变量（如 var(--accent)）。 */
+export function RateHeatmapGrid({
+  days,
+  leadingEmpty,
+  color,
+  cellSize = 11,
+  gap = 3,
+  onDayClick,
+}: {
+  days: AggregateHeatmapDay[];
+  leadingEmpty: number;
+  color: string;
+  cellSize?: number;
+  gap?: number;
+  onDayClick?: (d: AggregateHeatmapDay) => void;
+}) {
+  const accent = color.startsWith("var(") ? color : taskColor(color);
+  const cells: (AggregateHeatmapDay | null)[] = [
+    ...Array<null>(leadingEmpty).fill(null),
+    ...days,
+  ];
+  const weeks: (AggregateHeatmapDay | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return (
+    <div className="overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
+      <div className="flex" style={{ gap }}>
+        {weeks.map((wk, wi) => (
+          <div key={wi} className="flex flex-col" style={{ gap }}>
+            {wk.map((d, di) => {
+              if (!d) return <div key={`e${di}`} style={{ width: cellSize, height: cellSize }} />;
+              const bg =
+                d.display_state === "future"
+                  ? "color-mix(in srgb, var(--ink) 8%, transparent)"
+                  : d.display_state === "not_applicable"
+                    ? "color-mix(in srgb, var(--ink) 4.5%, transparent)"
+                    : `color-mix(in srgb, ${accent} ${Math.round(18 + (d.rate ?? 0) * 76)}%, transparent)`;
+              return (
+                <div
+                  key={d.logical_day}
+                  title={aggregateDayText(d)}
+                  onClick={onDayClick ? () => onDayClick(d) : undefined}
+                  role={onDayClick ? "button" : undefined}
+                  className={onDayClick ? "cursor-pointer" : undefined}
+                  style={{
+                    width: cellSize,
+                    height: cellSize,
+                    borderRadius: 3,
+                    background: bg,
+                    border: d.is_today ? `1.6px solid ${accent}` : "0.7px solid transparent",
+                  }}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

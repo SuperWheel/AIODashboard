@@ -4,12 +4,13 @@ import { usePolling } from "../hooks";
 import type { LibraryYearHeatmap, TaskDayView } from "../types";
 import { taskColor } from "../taskVisual";
 import CheckinRow from "./CheckinRow";
+import { RateHeatmapGrid } from "./Heatmap";
 import { Button, Card, Empty } from "./ui";
 import { toastError } from "./DialogHost";
 
 type ArchiveMode = "keep" | "detach" | "move_to";
 
-/** 主库详情：日期概览 + 综合热力图 + 直属任务 + 归档三选一。 */
+/** 重要日详情：日期概览 + 综合热力图 + 直属任务 + 归档三选一。 */
 export default function LibraryDetailView({
   libraryId,
   refreshKey,
@@ -101,7 +102,11 @@ export default function LibraryDetailView({
         </h2>
         {heatmap && (
           <div className="mt-3">
-            <LibraryHeatmapGrid heatmap={heatmap} color={accent} />
+            <RateHeatmapGrid
+              days={heatmap.days}
+              leadingEmpty={heatmap.leading_empty_count}
+              color={accent}
+            />
           </div>
         )}
         <p className="mt-2 text-[11px] text-ink3">
@@ -117,7 +122,7 @@ export default function LibraryDetailView({
         </div>
         {tasks.length === 0 ? (
           <div className="p-4">
-            <Empty text="暂无直属任务——在任务编辑器里把任务归入本主库" glyph="☑" />
+            <Empty text="暂无直属任务——在任务编辑器里把任务归入本重要日" glyph="☑" />
           </div>
         ) : (
           tasks.map((v) => (
@@ -130,7 +135,7 @@ export default function LibraryDetailView({
       {it.status === "active" ? (
         <div className="mt-4">
           <Button variant="ghost" onClick={() => setArchiveOpen(true)}>
-            归档主库…
+            归档重要日…
           </Button>
         </div>
       ) : (
@@ -139,7 +144,7 @@ export default function LibraryDetailView({
             variant="ghost"
             onClick={() => api.restoreLibrary(it.id).then(() => { onChanged(); onBack(); }).catch((e) => toastError(String(e)))}
           >
-            恢复主库
+            恢复重要日
           </Button>
         </div>
       )}
@@ -152,9 +157,9 @@ export default function LibraryDetailView({
             <div className="mt-3 space-y-2">
               {(
                 [
-                  { key: "keep", label: "保留归属（任务仍显示在主库历史中）" },
+                  { key: "keep", label: "保留归属（任务仍显示在重要日历史中）" },
                   { key: "detach", label: "转为独立任务" },
-                  { key: "move_to", label: "移动到另一个主库" },
+                  { key: "move_to", label: "移动到另一个重要日" },
                 ] as { key: ArchiveMode; label: string }[]
               ).map((m) => (
                 <label key={m.key} className="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs hover:bg-hover">
@@ -168,7 +173,7 @@ export default function LibraryDetailView({
                   onChange={(e) => setMoveTo(e.target.value)}
                   className="w-full rounded-lg border border-line bg-surface2 px-2.5 py-1.5 text-sm outline-none"
                 >
-                  <option value="">选择目标主库…</option>
+                  <option value="">选择目标重要日…</option>
                   {allLibs.map((l) => (
                     <option key={l.id} value={l.id}>{l.title}</option>
                   ))}
@@ -182,55 +187,6 @@ export default function LibraryDetailView({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/** 主库年度综合热力图（rate 色阶 0–100%）。 */
-function LibraryHeatmapGrid({ heatmap, color }: { heatmap: LibraryYearHeatmap; color: string }) {
-  const accent = taskColor(color);
-  const cells: (import("../types").LibraryHeatmapDay | null)[] = [
-    ...Array<null>(heatmap.leading_empty_count).fill(null),
-    ...heatmap.days,
-  ];
-  const weeks: (import("../types").LibraryHeatmapDay | null)[][] = [];
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-  const size = 11;
-  const gap = 3;
-  return (
-    <div className="overflow-x-auto pb-1">
-      <div className="flex" style={{ gap }}>
-        {weeks.map((wk, wi) => (
-          <div key={wi} className="flex flex-col" style={{ gap }}>
-            {wk.map((d, di) => {
-              if (!d) return <div key={`e${di}`} style={{ width: size, height: size }} />;
-              const bg =
-                d.display_state === "future"
-                  ? "color-mix(in srgb, var(--ink) 8%, transparent)"
-                  : d.display_state === "not_applicable"
-                    ? "color-mix(in srgb, var(--ink) 4.5%, transparent)"
-                    : `color-mix(in srgb, ${accent} ${Math.round(18 + (d.rate ?? 0) * 76)}%, transparent)`;
-              return (
-                <div
-                  key={d.logical_day}
-                  title={
-                    d.display_state === "rate"
-                      ? `${d.logical_day}：完成率 ${Math.round((d.rate ?? 0) * 100)}%（${d.active_task_count} 个任务）`
-                      : `${d.logical_day}：${d.display_state === "future" ? "尚未到达" : "不适用"}`
-                  }
-                  style={{
-                    width: size,
-                    height: size,
-                    borderRadius: 3,
-                    background: bg,
-                    border: d.is_today ? `1.6px solid ${accent}` : "0.7px solid transparent",
-                  }}
-                />
-              );
-            })}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

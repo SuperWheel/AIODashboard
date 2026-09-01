@@ -48,6 +48,8 @@ export default function TaskDetailView({
   const [ov, setOv] = useState<PeriodOverview | null>(null);
   const [view, setView] = useState<TaskDayView | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  // 撤销按钮防抖：请求返回前快速连点会连撤两条
+  const [undoBusy, setUndoBusy] = useState(false);
 
   const load = useCallback(() => {
     api.taskOverview(taskId, period, anchor).then(setOv).catch((e) => toastError(String(e)));
@@ -275,13 +277,17 @@ export default function TaskDetailView({
             今日 {view.count} / {view.target} {task?.unit ?? ""}
             {view.can_undo && (
               <button
-                className="ml-3 text-ink3 underline-offset-2 hover:text-ink hover:underline"
-                onClick={() =>
+                className="ml-3 text-ink3 underline-offset-2 hover:text-ink hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={undoBusy}
+                onClick={() => {
+                  if (undoBusy) return;
+                  setUndoBusy(true);
                   api
                     .taskUndo(taskId)
                     .then(onChanged)
                     .catch((e) => toastError(String(e)))
-                }
+                    .finally(() => setUndoBusy(false));
+                }}
               >
                 撤销最近打卡
               </button>

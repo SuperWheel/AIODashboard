@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { PeriodOverview, Task, TaskDayView } from "../types";
-import { taskColor } from "../taskVisual";
+import { recurrenceLabel, taskColor } from "../taskVisual";
 import { HeatmapCell, YearHeatmap } from "./Heatmap";
 import { toastError } from "./DialogHost";
 
@@ -118,6 +118,11 @@ export function CheckinControls({
         <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-ink3 border-t-transparent" />
       </div>
     );
+  }
+
+  // 循环规则今天不命中（如每周三的周卡今天周四）：控件整体停用（004）
+  if (view.state === "not_applicable") {
+    return <span className="shrink-0 text-[11px] text-ink3">今天不适用</span>;
   }
 
   if (target <= 1) {
@@ -245,23 +250,28 @@ function StyleMenu({
 function subtitleFor(view: TaskDayView, ov: PeriodOverview | null): string {
   const t = view.target;
   const unit = view.task.unit;
+  const rec = recurrenceLabel(view.task.recurrence);
+  const prefix = rec ? `${rec} · ` : "";
+  if (view.state === "not_applicable") {
+    return `${prefix}今天不适用`;
+  }
   switch (view.task.card_style) {
     case "week":
       return ov
-        ? `本周完成 ${ov.summary.complete_day_count}/${ov.summary.applicable_day_count} 天 · 连续 ${ov.summary.current_streak} 天 · ${ov.summary.actual_count} ${unit}`
+        ? `${prefix}本周完成 ${ov.summary.complete_day_count}/${ov.summary.applicable_day_count} 天 · 连续 ${ov.summary.current_streak} 天 · ${ov.summary.actual_count} ${unit}`
         : "加载中…";
     case "month":
       return ov
-        ? `本月完成 ${ov.summary.complete_day_count}/${ov.summary.applicable_day_count} 天 · ${ov.summary.actual_count} ${unit} · ${Math.round(ov.summary.complete_day_rate * 100)}%`
+        ? `${prefix}本月完成 ${ov.summary.complete_day_count}/${ov.summary.applicable_day_count} 天 · ${ov.summary.actual_count} ${unit} · ${Math.round(ov.summary.complete_day_rate * 100)}%`
         : "加载中…";
     case "year":
       return ov
-        ? `本年完成 ${ov.summary.complete_day_count}/${ov.summary.applicable_day_count} 天 · ${ov.summary.actual_count} ${unit} · ${Math.round(ov.summary.complete_day_rate * 100)}%`
+        ? `${prefix}本年完成 ${ov.summary.complete_day_count}/${ov.summary.applicable_day_count} 天 · ${ov.summary.actual_count} ${unit} · ${Math.round(ov.summary.complete_day_rate * 100)}%`
         : "加载中…";
     default:
-      if (view.state === "completed") return `今日已完成（${view.count} ${unit}）`;
-      if (t && t > 1) return `今日 ${view.count} / ${t} ${unit}`;
-      return "尚未完成";
+      if (view.state === "completed") return `${prefix}今日已完成（${view.count} ${unit}）`;
+      if (t && t > 1) return `${prefix}今日 ${view.count} / ${t} ${unit}`;
+      return rec || "尚未完成";
   }
 }
 
@@ -303,7 +313,11 @@ export default function TaskCard({
 
   return (
     <div
-      className="group relative rounded-2xl border bg-surface p-4 shadow-card transition-all duration-150 hover:-translate-y-px hover:shadow-lg"
+      // 菜单打开时整卡提升层级：卡片之间互为兄弟节点，仅靠菜单自身的
+      // z-index 压不过 DOM 靠后的相邻卡片，会被遮挡
+      className={`group relative rounded-2xl border bg-surface p-4 shadow-card transition-all duration-150 hover:-translate-y-px hover:shadow-lg ${
+        menuOpen ? "z-30" : ""
+      }`}
       style={{ borderColor: `color-mix(in srgb, ${accent} 22%, var(--line))` }}
       onContextMenu={(e) => {
         e.preventDefault();

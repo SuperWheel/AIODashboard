@@ -2,6 +2,17 @@ export type TaskStatus = "active" | "archived";
 
 export type CardStyle = "day" | "week" | "month" | "year";
 
+/** 循环规则（004）：与卡片样式正交——样式管统计展示，循环管哪天适用。
+ *  weekly.weekdays 为 ISO 星期（1=周一…7=周日）；once = 完成即自动归档。 */
+export type Recurrence =
+  | { kind: "daily" }
+  | { kind: "weekly"; weekdays: number[] }
+  | { kind: "monthly" }
+  | { kind: "yearly" }
+  | { kind: "once" };
+
+export const defaultRecurrence: Recurrence = { kind: "daily" };
+
 export interface Task {
   id: string;
   title: string;
@@ -10,6 +21,8 @@ export interface Task {
   color_hex: string;
   unit: string;
   card_style: CardStyle;
+  /** 当前生效循环规则（后端按当日目标区间回填；旧数据缺省视为 daily） */
+  recurrence?: Recurrence;
   project_id?: string | null;
   created_at: string;
   updated_at: string;
@@ -111,7 +124,8 @@ export interface LibraryListItem extends DateLibrary {
   task_count: number;
 }
 
-export interface LibraryHeatmapDay {
+/** 聚合热力图单日（重要日综合 / 全局共用形状）。 */
+export interface AggregateHeatmapDay {
   logical_day: string;
   display_state: "not_applicable" | "future" | "rate" | string;
   rate: number | null;
@@ -128,7 +142,16 @@ export interface LibraryYearHeatmap {
   start_day: string;
   end_day: string;
   leading_empty_count: number;
-  days: LibraryHeatmapDay[];
+  days: AggregateHeatmapDay[];
+}
+
+/** 全局年度综合热力图（所有任务聚合，首页用）。 */
+export interface GlobalYearHeatmap {
+  year: number;
+  start_day: string;
+  end_day: string;
+  leading_empty_count: number;
+  days: AggregateHeatmapDay[];
 }
 
 export type ProjectStatus = "active" | "archived";

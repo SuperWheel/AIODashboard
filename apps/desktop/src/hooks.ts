@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * 轮询 + 窗口聚焦时自动刷新。
@@ -21,6 +21,18 @@ export function usePolling(fn: () => void, intervalMs = 4000, deps: unknown[] = 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, intervalMs]);
+}
+
+/** 视口是否不窄于 px（响应式列数等 JS 需要与 Tailwind 断点同步时用）。 */
+export function useMinWidth(px: number): boolean {
+  const [ok, setOk] = useState(() => window.matchMedia(`(min-width: ${px}px)`).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${px}px)`);
+    const on = () => setOk(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [px]);
+  return ok;
 }
 
 export function fmtDateTime(iso?: string | null): string {

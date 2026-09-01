@@ -15,7 +15,7 @@ import PluginsView from "./components/PluginsView";
 import PluginApprovalModal from "./components/PluginApprovalModal";
 import PluginErrorBoundary from "./components/PluginErrorBoundary";
 import DialogHost, { toastError } from "./components/DialogHost";
-import { EventBus } from "./plugins/events";
+import { EventBus, pluginEvents } from "./plugins/events";
 import { CronRegistry } from "./plugins/crons";
 import { ModuleRegistry, type PluginCardProps } from "./plugins/registry";
 import { loadAllPlugins, loadPlugin, type LoadedPlugin, type PluginHostOptions } from "./plugins/loader";
@@ -66,7 +66,7 @@ export default function App() {
     registry.registerView({
       owner: "core",
       key: "libraries",
-      title: "主库",
+      title: "重要日",
       icon: "📅",
       component: (p) => (
         <LibrariesView
@@ -110,7 +110,8 @@ export default function App() {
     registryRef.current = registry;
   }
   if (!eventsRef.current) {
-    eventsRef.current = new EventBus();
+    // 用模块单例：api.ts 发射领域事件（task.completed 等）与插件宿主必须是同一条总线
+    eventsRef.current = pluginEvents;
   }
   if (!cronsRef.current) {
     cronsRef.current = new CronRegistry();

@@ -20,7 +20,7 @@ function dayBadge(it: LibraryListItem): { text: string; cls: string } {
   }
 }
 
-/** 主库编辑器（新建/编辑）。 */
+/** 重要日编辑器（新建/编辑）。 */
 function LibraryEditor({
   library,
   onClose,
@@ -67,7 +67,7 @@ function LibraryEditor({
         className="w-[420px] max-w-[92vw] rounded-2xl border border-line bg-surface p-5 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-sm font-semibold text-ink">{library ? "编辑主库" : "新建日期主库"}</h2>
+        <h2 className="text-sm font-semibold text-ink">{library ? "编辑重要日" : "新建重要日"}</h2>
         <div className="mt-4 grid grid-cols-[72px_1fr] gap-3">
           <div>
             <label className={labelCls}>图标</label>
@@ -121,7 +121,7 @@ function LibraryEditor({
   );
 }
 
-/** 日期主库总览：卡片网格 + 已归档。navParam 以 dlb_ 开头 → 详情。 */
+/** 重要日总览：卡片网格 + 已归档。navParam 以 dlb_ 开头 → 详情。 */
 export default function LibrariesView({
   refreshKey,
   onChanged,
@@ -165,7 +165,7 @@ export default function LibrariesView({
       onNav("libraries", it.id);
       return;
     }
-    if (!(await confirmDialog("归档主库", `「${it.title}」将进入已归档列表`))) return;
+    if (!(await confirmDialog("归档重要日", `「${it.title}」将进入已归档列表`))) return;
     try {
       await api.archiveLibrary(it.id, "keep");
       onChanged();
@@ -177,10 +177,10 @@ export default function LibrariesView({
   return (
     <div>
       <PageHeader
-        title="日期主库"
+        title="重要日"
         count={active.length}
         desc="用纪念日或倒计时日组织长期任务"
-        actions={<Button onClick={() => { setEditing(null); setEditorOpen(true); }}>＋ 新建主库</Button>}
+        actions={<Button onClick={() => { setEditing(null); setEditorOpen(true); }}>＋ 新建重要日</Button>}
       />
 
       <div className="mt-4 flex gap-1">
@@ -201,9 +201,9 @@ export default function LibrariesView({
       {shown.length === 0 ? (
         <div className="mt-4">
           <Empty
-            text={showArchived ? "没有已归档的主库" : "还没有日期主库，建一个倒计时试试看"}
+            text={showArchived ? "没有已归档的重要日" : "还没有重要日，建一个倒计时试试看"}
             glyph="📅"
-            action={!showArchived ? <Button onClick={() => setEditorOpen(true)}>新建主库</Button> : undefined}
+            action={!showArchived ? <Button onClick={() => setEditorOpen(true)}>新建重要日</Button> : undefined}
           />
         </div>
       ) : (

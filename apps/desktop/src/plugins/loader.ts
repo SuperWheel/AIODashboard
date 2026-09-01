@@ -98,6 +98,11 @@ export async function loadPlugin(id: string, opts: PluginHostOptions): Promise<L
   if (typeof mod.onload !== "function") {
     throw new Error("插件缺少 onload 导出");
   }
+  // 重载语义：先清掉该 owner 的旧注册/订阅。StrictMode 双挂载、停用后重新启用
+  // 都会二次 loadPlugin，不清理的话 onload 里的注册会因 id 冲突抛错并触发自动停用。
+  opts.registry.unregisterOwner(id);
+  opts.events.offOwner(id);
+  opts.crons.offOwner(id);
   const apiObj = createPluginApi(id, manifest, opts);
   // 看门狗：onload 挂死（超时或抛错）都会让上层禁用该插件
   await withTimeout(

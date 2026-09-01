@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   CardStyle,
   DateLibrary,
+  GlobalYearHeatmap,
+  Recurrence,
   InboxItem,
   LibraryListItem,
   LibraryYearHeatmap,
@@ -15,6 +17,7 @@ import type {
   TodayContext,
 } from "./types";
 import type { PluginInfo, PluginManifest } from "./plugins/types";
+import { pluginEvents } from "./plugins/events";
 
 export interface ProcessReport {
   inbox_id: string;
@@ -40,6 +43,7 @@ export interface CreateTaskParams {
   icon?: string;
   color?: string;
   cardStyle?: CardStyle;
+  recurrence?: Recurrence;
   projectId?: string | null;
   libraryId?: string | null;
   actor?: string;
@@ -53,14 +57,26 @@ export interface UpdateTaskParams {
   icon?: string;
   color?: string;
   cardStyle?: CardStyle;
+  recurrence?: Recurrence;
   /** 显式 null = 移出项目；不传 = 不修改 */
   projectId?: string | null;
   actor?: string;
 }
 
+/** 循环规则的扁平序列化：后端 params 用 kind + weekdays 两个键。 */
+function recurrencePayload(rec?: Recurrence): Record<string, unknown> {
+  if (!rec) return { recurrence: null, weekdays: null };
+  if (rec.kind === "weekly") {
+    return { recurrence: "weekly", weekdays: rec.weekdays };
+  }
+  return { recurrence: rec.kind, weekdays: null };
+}
+
 export const api = {
   // Today / Tasks
   getToday: () => invoke<TodayContext>("get_today"),
+  /** 任务墙：全部启用任务的当日视图（含今天不适用） */
+  taskWallViews: () => invoke<TaskDayView[]>("task_wall_views"),
   listTasks: (scope?: "all" | "active" | "archived") =>
     invoke<Task[]>("list_tasks", { scope }),
   createTask: (params: CreateTaskParams) =>
@@ -72,10 +88,14 @@ export const api = {
         icon: params.icon ?? null,
         color: params.color ?? null,
         cardStyle: params.cardStyle ?? null,
+        ...recurrencePayload(params.recurrence),
         projectId: params.projectId ?? null,
         libraryId: params.libraryId ?? null,
         actor: params.actor ?? null,
       },
+    }).then((t) => {
+      pluginEvents.emit("task.created", { id: t.id, title: t.title });
+      return t;
     }),
   updateTask: (params: UpdateTaskParams) =>
     invoke<Task>("update_task", {
@@ -87,7 +107,10 @@ export const api = {
         icon: params.icon ?? null,
         color: params.color ?? null,
         cardStyle: params.cardStyle ?? null,
-        projectId: params.projectId === undefined ? null : params.projectId,
+        ...recurrencePayload(params.recurrence),
+        projectId: params.projectId ?? null,
+        // JSON null 无法区分"不变"与"清空"，后端靠这个标志判断移出项目
+        clearProject: params.projectId === null,
         actor: params.actor ?? null,
       },
     }),
@@ -99,7 +122,14 @@ export const api = {
 
   // Check-in
   taskCheckin: (id: string, actor?: string) =>
-    invoke<TaskDayView>("task_checkin", { id, operationId: null, actor: actor ?? null }),
+    invoke<TaskDayView>("task_checkin", { id, operationId: null, actor: actor ?? null }).then(
+      (v) => {
+        if (v.state === "completed") {
+          pluginEvents.emit("task.completed", { id: v.task.id, title: v.task.title });
+        }
+        return v;
+      },
+    ),
   taskDecrement: (id: string, actor?: string) =>
     invoke<TaskDayView>("task_decrement", { id, operationId: null, actor: actor ?? null }),
   taskUndo: (id: string, actor?: string) =>
@@ -141,6 +171,8 @@ export const api = {
   libraryTasks: (libraryId: string) => invoke<Task[]>("library_tasks", { libraryId }),
   libraryHeatmap: (libraryId: string, anchor?: string) =>
     invoke<LibraryYearHeatmap>("library_heatmap", { libraryId, anchor: anchor ?? null }),
+  globalYearHeatmap: (anchor?: string) =>
+    invoke<GlobalYearHeatmap>("global_year_heatmap", { anchor: anchor ?? null }),
   moveTaskLibrary: (id: string, libraryId: string | null) =>
     invoke<Task>("move_task_library", { id, libraryId }),
 
@@ -151,9 +183,8 @@ export const api = {
   deleteTaskAs: (actor: string, id: string) =>
     invoke<void>("delete_task", { id, actor }),
   createNoteAs: (actor: string, title: string, body: string) =>
-    invoke<Note>("create_note", { title, body, actor }),
-  addInboxItemAs: (actor: string, content: string) =>
-    invoke<InboxItem>("add_inbox_item", { content, actor }),
+    api.createNote(title, body, actor),
+  addInboxItemAs: (actor: string, content: string) => api.addInboxItem(content, actor),
 
   // Projects
   listProjects: () => invoke<ProjectWithStats[]>("list_projects"),
@@ -170,8 +201,11 @@ export const api = {
 
   // Notes
   listNotes: (limit = 200) => invoke<Note[]>("list_notes", { limit }),
-  createNote: (title: string, body: string) =>
-    invoke<Note>("create_note", { title, body }),
+  createNote: (title: string, body: string, actor?: string) =>
+    invoke<Note>("create_note", { title, body, actor: actor ?? null }).then((n) => {
+      pluginEvents.emit("note.created", { id: n.id, title: n.title });
+      return n;
+    }),
   updateNote: (id: string, title: string, body: string) =>
     invoke<Note>("update_note", { id, title, body }),
   deleteNote: (id: string) => invoke<void>("delete_note", { id }),
@@ -179,7 +213,11 @@ export const api = {
   // Inbox
   listInbox: (includeProcessed = false) =>
     invoke<InboxItem[]>("list_inbox", { includeProcessed }),
-  addInboxItem: (content: string) => invoke<InboxItem>("add_inbox_item", { content }),
+  addInboxItem: (content: string, actor?: string) =>
+    invoke<InboxItem>("add_inbox_item", { content, actor: actor ?? null }).then((item) => {
+      pluginEvents.emit("inbox.added", { id: item.id, content: item.content });
+      return item;
+    }),
   inboxToTask: (id: string) => invoke<ProcessReport>("inbox_to_task", { id }),
   inboxToNote: (id: string) => invoke<ProcessReport>("inbox_to_note", { id }),
   deleteInboxItem: (id: string) => invoke<void>("delete_inbox_item", { id }),

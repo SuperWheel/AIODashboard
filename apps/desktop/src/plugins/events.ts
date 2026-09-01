@@ -42,3 +42,6 @@ export class EventBus {
     }
   }
 }
+
+/** 宿主全局事件总线单例：App 的插件宿主与 api.ts 的领域事件发射必须共用同一实例。 */
+export const pluginEvents = new EventBus();
