@@ -272,7 +272,7 @@ export default function TasksView({
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1">
+          <div className="flex items-center rounded-lg bg-hover p-0.5">
             {(
               [
                 { key: "active", label: "进行中" },
@@ -282,8 +282,10 @@ export default function TasksView({
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
-                  tab === t.key ? "bg-accent/10 font-medium text-accent" : "text-ink3 hover:text-ink"
+                className={`h-6 rounded-md px-2.5 text-xs transition-colors ${
+                  tab === t.key
+                    ? "bg-surface font-medium text-ink shadow-sm"
+                    : "text-ink2 hover:text-ink"
                 }`}
               >
                 {t.label}
@@ -294,7 +296,7 @@ export default function TasksView({
           {tab === "active" && <DayNavigator day={day} onChange={setDay} />}
         </div>
         {tab === "active" && views.length > 0 && (
-          <div className="flex gap-1">
+          <div className="flex items-center rounded-lg bg-hover p-0.5">
             {(
               [
                 { key: "smart", label: "均衡混排" },
@@ -309,10 +311,10 @@ export default function TasksView({
                     ? "按高度均衡分两列，卡片互不拉伸"
                     : "按日/周/月/年分区展示"
                 }
-                className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
+                className={`h-6 rounded-md px-2.5 text-xs transition-colors ${
                   wallMode === m.key
-                    ? "bg-accent/10 font-medium text-accent"
-                    : "text-ink3 hover:text-ink"
+                    ? "bg-surface font-medium text-ink shadow-sm"
+                    : "text-ink2 hover:text-ink"
                 }`}
               >
                 {m.label}
