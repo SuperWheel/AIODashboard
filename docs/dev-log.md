@@ -12,6 +12,7 @@
 **修复**：①三个切换器统一为同一分段控件规格——`bg-hover p-0.5` 圆角容器 + `h-6 rounded-md` 内块，选中 = `bg-surface + shadow-sm`（与快速捕捉/日期控件同规格）；原先的文字按钮（`py-1` + accent/10 底色）下线。②归档页重构（A+B）：搜索框（标题即时过滤）+ 排序分段控件（归档时间/名称/创建时间）+ 按归档月份分组（组内倒序）+ 小卡片（图标色块/标题/归档日期/查看/恢复）。后端新增 `period_repo::archived_days`（GROUP BY 取活动区间最后关闭日 MAX(end_day)）+ `task_service::list_archived_tasks` + Tauri command；CLI 与协议不动。check.sh 全绿（core 29 测含归档日链路）。
 
 **同日追加**：③控件高度立规——同排输入框/选择框必须等高：表单控件一律 `inputCls`(h-9)，工具栏控件一律 28px（新 `inputClsSm`=h-7 与分段控件等高）；归档搜索框已换 inputClsSm。④归档页加「指定日期」筛选：`DatePickerPanel` 支持 `marks`（日→数量）——有归档任务的日子在格子底部渲染色块，颜色深度随当天任务数（相对最大计数 30%→100%）；选中筛选日只显示该日归档任务，可一键清除。
+⑤按钮高度立规补记：全局 `Button` 从 py 撑高（约 32px）改为固定 h-9（36px，inline-flex 居中）——页头「＋新建任务」与编辑器底部按钮从此与输入框（inputCls h-9）完全等高。
 
 ---
 

@@ -43,7 +43,7 @@ export function Button({
   };
   return (
     <button
-      className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 ${variants[variant]} ${className}`}
+      className={`inline-flex h-9 items-center justify-center rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-40 ${variants[variant]} ${className}`}
       {...rest}
     />
   );
