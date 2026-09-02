@@ -32,3 +32,5 @@
 - TaskEditor：星级行（点第 N 颗设 N，再点清除为 0）。
 - 拖拽：HTML5 DnD（卡片 wrapper draggable），插入指示线（2px accent），
   drop 计算 before/after 后按上节规则调用；拖动中不改变数据，落点确定后一次性写回。
+  走查修订：WKWebView 要求 dragstart 必须 setData（否则拖拽不启动）；逻辑抽为共享
+  src/dnd.ts（useTaskDnd），首页今日卡同用；首页重建排序 = 完成沉底 + 组内墙口径。

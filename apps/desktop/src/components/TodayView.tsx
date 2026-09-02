@@ -9,6 +9,7 @@ import TaskEditor from "./TaskEditor";
 import TodayTaskCard from "./TodayTaskCard";
 import { Badge, Card, Empty, ProgressRing, StatCard } from "./ui";
 import { toastError } from "./DialogHost";
+import { useTaskDnd } from "../dnd";
 
 /** 重要日天数短文案（首页右栏卡）。 */
 function libraryDayText(it: LibraryListItem): { text: string; overdue: boolean } {
@@ -109,7 +110,12 @@ export default function TodayView({
           .sort((a, b) => {
             const da = a.state === "completed" ? 1 : 0;
             const db = b.state === "completed" ? 1 : 0;
-            return da - db || (idx.get(a.task.id) ?? 0) - (idx.get(b.task.id) ?? 0);
+            return (
+              da - db ||
+              b.task.priority - a.task.priority ||
+              a.task.sort_order - b.task.sort_order ||
+              (idx.get(a.task.id) ?? 0) - (idx.get(b.task.id) ?? 0)
+            );
           })
           .map((v) => v.task.id);
       }
@@ -147,6 +153,12 @@ export default function TodayView({
     setLastActionTask(taskId);
     onChanged();
   };
+
+  // 今日卡拖拽（006 共享 hook）：未完成组内手动排序；跨档同样弹改级确认
+  const { dragId, indicator, wrapperProps } = useTaskDnd(
+    () => displayTasks.map((v) => v.task),
+    onChanged,
+  );
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -373,14 +385,31 @@ export default function TodayView({
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
-            {displayTasks.map((v) => (
-              <TodayTaskCard
-                key={v.task.id}
-                view={v}
-                onChanged={() => afterAction(v.task.id)}
-                onOpenDetail={(id) => onNav("tasks", id)}
-              />
-            ))}
+            {displayTasks.map((v) => {
+              const marked = indicator(v.task.id);
+              return (
+                <div
+                  key={v.task.id}
+                  {...wrapperProps(v.task.id)}
+                  style={{
+                    boxShadow:
+                      marked === "before"
+                        ? "0 -2px 0 var(--accent)"
+                        : marked === "after"
+                          ? "0 2px 0 var(--accent)"
+                          : undefined,
+                    opacity: dragId === v.task.id ? 0.4 : undefined,
+                    borderRadius: 12,
+                  }}
+                >
+                  <TodayTaskCard
+                    view={v}
+                    onChanged={() => afterAction(v.task.id)}
+                    onOpenDetail={(id) => onNav("tasks", id)}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>

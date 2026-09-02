@@ -6,7 +6,8 @@ import TaskCard from "./TaskCard";
 import TaskDetailView from "./TaskDetailView";
 import TaskEditor from "./TaskEditor";
 import { Button, DatePickerPanel, Empty, inputCls, PageHeader } from "./ui";
-import { confirmDialog, toastError } from "./DialogHost";
+import { toastError } from "./DialogHost";
+import { useTaskDnd } from "../dnd";
 import { taskColor } from "../taskVisual";
 
 type Tab = "active" | "archived";
@@ -27,11 +28,6 @@ function shiftDay(day: string, n: number): string {
 function dayLabel(day: string): string {
   const d = new Date(`${day}T00:00:00`);
   return `${day} · 周${WEEKDAYS[d.getDay()]}`;
-}
-
-/** 星级文案：0=未评级，N=N 星。 */
-function starText(n: number): string {
-  return n > 0 ? `${n} 星` : "未评级";
 }
 
 /** "2026-09" → "2026年9月"；未知时间原样显示。 */
@@ -340,72 +336,19 @@ export default function TasksView({
     );
   };
 
-  // 拖拽排序（006）：拖的是发牌序列（均衡发牌算法不变），不是列。
-  // 同星级档内落位直接生效；跨档落点弹确认框改成目标档星级。
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dropMark, setDropMark] = useState<{ id: string; where: "before" | "after" } | null>(null);
-
-  const dropOn = async (target: { id: string; where: "before" | "after" }) => {
-    const dragged = dragId;
-    setDragId(null);
-    setDropMark(null);
-    if (!dragged || dragged === target.id) return;
-    const seq = wallViews.map((v) => v.task);
-    const drag = seq.find((t) => t.id === dragged);
-    if (!drag) return;
-    const others = seq.filter((t) => t.id !== dragged);
-    const idx = others.findIndex((t) => t.id === target.id);
-    if (idx < 0) return;
-    const beforeId = target.where === "before" ? (others[idx - 1]?.id ?? null) : others[idx].id;
-    const afterId = target.where === "before" ? others[idx].id : (others[idx + 1]?.id ?? null);
-    // 目标档 = 落点下方卡片的星级（无下方 = 上方卡片；均无 = 自身档不变）
-    const below = afterId ? others.find((t) => t.id === afterId) : undefined;
-    const above = beforeId ? others.find((t) => t.id === beforeId) : undefined;
-    const band = below?.priority ?? above?.priority ?? drag.priority;
-    try {
-      if (band === drag.priority) {
-        await api.moveTaskPosition(dragged, null, beforeId, afterId);
-      } else {
-        const ok = await confirmDialog(
-          "调整星级",
-          `将「${drag.title}」从${starText(drag.priority)}调整为${starText(band)}并移动到此处？`,
-        );
-        if (!ok) return;
-        await api.moveTaskPosition(dragged, band, beforeId, afterId);
-      }
-      onChanged();
-    } catch (e) {
-      toastError(String(e));
-    }
-  };
+  // 拖拽排序（006）：拖的是发牌序列（均衡发牌算法不变），不是列；
+  // 共享 useTaskDnd（含 WKWebView 必须 setData 的修复）。
+  const { dragId, indicator, wrapperProps } = useTaskDnd(
+    () => wallViews.map((v) => v.task),
+    onChanged,
+  );
 
   const renderCard = (v: TaskDayView) => {
-    const marked = dropMark?.id === v.task.id ? dropMark.where : null;
+    const marked = indicator(v.task.id);
     return (
       <div
         key={v.task.id}
-        draggable
-        onDragStart={(e) => {
-          setDragId(v.task.id);
-          e.dataTransfer.effectAllowed = "move";
-        }}
-        onDragEnd={() => {
-          setDragId(null);
-          setDropMark(null);
-        }}
-        onDragOver={(e) => {
-          if (!dragId || dragId === v.task.id) return;
-          e.preventDefault();
-          const r = e.currentTarget.getBoundingClientRect();
-          setDropMark({
-            id: v.task.id,
-            where: e.clientY < r.top + r.height / 2 ? "before" : "after",
-          });
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          void dropOn({ id: v.task.id, where: dropMark?.id === v.task.id ? dropMark.where : "after" });
-        }}
+        {...wrapperProps(v.task.id)}
         style={{
           boxShadow:
             marked === "before"
