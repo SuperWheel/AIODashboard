@@ -800,13 +800,137 @@ fn once_task_auto_archives_on_completion() {
         core::task_service::get_task(&c, &t.id).unwrap().status,
         TaskStatus::Archived
     );
-    // Today 不再出现，账本历史保留
+    // 完成日当天仍以完成态留在 Today（2026-09-02 修订：今天过了才退出）
     let ctx = core::context_service::context_today(&c).unwrap();
-    assert!(!ctx.today_tasks.iter().any(|x| x.task.id == t.id));
+    let tv = ctx
+        .today_tasks
+        .iter()
+        .find(|x| x.task.id == t.id)
+        .expect("完成日当天应留在 Today");
+    assert_eq!(tv.state, "completed");
+    assert_eq!(tv.task.status, TaskStatus::Archived);
+    // 任务墙今天同样保留完成卡；明天起退出
+    let wall = core::context_service::wall_task_views(&c).unwrap();
+    assert!(wall
+        .iter()
+        .any(|x| x.task.id == t.id && x.state == "completed"));
+    let tomorrow = core::logical_day::add_days(&today(), 1).unwrap();
+    let wall_tomorrow = core::context_service::wall_task_views_on(&c, &tomorrow).unwrap();
+    assert!(wall_tomorrow.iter().all(|x| x.task.id != t.id));
+    // 账本历史保留
     assert_eq!(
         ds::completion_repo::day_count(&c, &t.id, &today()).unwrap(),
         1
     );
+}
+
+#[test]
+fn once_task_undo_restores_same_day_archive() {
+    let c = conn();
+    let t = make_task_rec(&c, 1, Recurrence::Once);
+    core::checkin_service::record(&c, &t.id, "op-1", Actor::User).unwrap();
+    assert_eq!(
+        core::task_service::get_task(&c, &t.id).unwrap().status,
+        TaskStatus::Archived
+    );
+    // 当天撤销完成 → 自动解除归档，回到待打卡
+    let v = core::checkin_service::undo(&c, &t.id, "op-undo-1", Actor::User).unwrap();
+    assert_eq!(v.state, "pending");
+    assert_eq!(v.count, 0);
+    assert_eq!(
+        core::task_service::get_task(&c, &t.id).unwrap().status,
+        TaskStatus::Active
+    );
+    let ctx = core::context_service::context_today(&c).unwrap();
+    let tv = ctx
+        .today_tasks
+        .iter()
+        .find(|x| x.task.id == t.id)
+        .expect("解除归档后应回到 Today");
+    assert_eq!(tv.state, "pending");
+    assert_eq!(tv.task.status, TaskStatus::Active);
+    // 可继续打卡 → 再次完成并归档
+    let v = core::checkin_service::record(&c, &t.id, "op-2", Actor::User).unwrap();
+    assert_eq!(v.state, "completed");
+    assert_eq!(
+        core::task_service::get_task(&c, &t.id).unwrap().status,
+        TaskStatus::Archived
+    );
+}
+
+#[test]
+fn once_task_multi_target_undo_restores_partial() {
+    let c = conn();
+    let t = make_task_rec(&c, 2, Recurrence::Once);
+    core::checkin_service::record(&c, &t.id, "op-1", Actor::User).unwrap();
+    let v = core::checkin_service::record(&c, &t.id, "op-2", Actor::User).unwrap();
+    assert_eq!(v.state, "completed");
+    // 撤掉一次 → 1/2 不再达标 → 解除归档，回到进行中
+    let v = core::checkin_service::undo(&c, &t.id, "op-undo-1", Actor::User).unwrap();
+    assert_eq!(v.state, "in_progress");
+    assert_eq!(v.count, 1);
+    assert_eq!(
+        core::task_service::get_task(&c, &t.id).unwrap().status,
+        TaskStatus::Active
+    );
+}
+
+#[test]
+fn archived_tasks_visible_in_wall_history() {
+    let c = conn();
+    let today_s = today();
+    let yesterday = core::logical_day::add_days(&today_s, -1).unwrap();
+    let backdate = |id: &str| {
+        // 模拟该任务昨天已在册：活动区间与目标区间都回溯到昨天
+        c.execute(
+            "UPDATE task_activity_periods SET start_day = ?2 WHERE task_id = ?1",
+            rusqlite::params![id, yesterday],
+        )
+        .unwrap();
+        c.execute(
+            "UPDATE task_target_periods SET start_day = ?2 WHERE task_id = ?1",
+            rusqlite::params![id, yesterday],
+        )
+        .unwrap();
+    };
+
+    // 一次性任务：昨天起在册，今天完成 → 自动归档
+    let once = make_task_rec(&c, 1, Recurrence::Once);
+    backdate(&once.id);
+    core::checkin_service::record(&c, &once.id, "op-1", Actor::User).unwrap();
+    assert_eq!(
+        core::task_service::get_task(&c, &once.id).unwrap().status,
+        TaskStatus::Archived
+    );
+    // 历史翻页：昨天在册未做 → missed；今天完成日留痕 → completed；明天退出
+    let wall_y = core::context_service::wall_task_views_on(&c, &yesterday).unwrap();
+    let wv = wall_y
+        .iter()
+        .find(|x| x.task.id == once.id)
+        .expect("归档任务在历史日应可见");
+    assert_eq!(wv.state, "missed");
+    let wall_t = core::context_service::wall_task_views_on(&c, &today_s).unwrap();
+    assert!(wall_t
+        .iter()
+        .any(|x| x.task.id == once.id && x.state == "completed"));
+    let tomorrow = core::logical_day::add_days(&today_s, 1).unwrap();
+    let wall_tm = core::context_service::wall_task_views_on(&c, &tomorrow).unwrap();
+    assert!(wall_tm.iter().all(|x| x.task.id != once.id));
+
+    // 手动归档（未完成）：历史日在册（missed），但归档当天立即退出 Today 与任务墙
+    let daily = make_task(&c, 1);
+    backdate(&daily.id);
+    core::task_service::archive_task(&c, &daily.id, Actor::User).unwrap();
+    let wall_y = core::context_service::wall_task_views_on(&c, &yesterday).unwrap();
+    let wv = wall_y
+        .iter()
+        .find(|x| x.task.id == daily.id)
+        .expect("手动归档任务在历史日应可见");
+    assert_eq!(wv.state, "missed");
+    let ctx = core::context_service::context_today(&c).unwrap();
+    assert!(ctx.today_tasks.iter().all(|x| x.task.id != daily.id));
+    let wall_t = core::context_service::wall_task_views_on(&c, &today_s).unwrap();
+    assert!(wall_t.iter().all(|x| x.task.id != daily.id));
 }
 
 #[test]

@@ -52,13 +52,18 @@ fn build_day_view_on(
 ) -> CoreResult<TaskDayView> {
     let period = period_repo::target_on(conn, &task.id, day)?;
     let target = period.as_ref().map(|p| p.target);
-    let applicable = task.status == dashboard_domain::TaskStatus::Active
-        && period_repo::is_active_on(conn, &task.id, day)?
-        && period
-            .as_ref()
-            .map(|p| p.recurrence.matches(&p.start_day, day))
-            .unwrap_or(false);
     let count = completion_repo::day_count(conn, &task.id, day)?;
+    let rec_hit = period
+        .as_ref()
+        .map(|p| p.recurrence.matches(&p.start_day, day))
+        .unwrap_or(false);
+    // 适用性纯区间驱动（不看 task.status）：已归档任务在活动区间覆盖的历史日
+    // 仍按真实状态重建（任务墙翻页回看）；归档当天达标的卡按适用展示——
+    // 「完成即归档」但完成日当天留痕，明天起才退出 Today/任务墙。
+    let mut applicable = period_repo::is_active_on(conn, &task.id, day)? && rec_hit;
+    if !applicable && rec_hit && period_repo::closed_on(conn, &task.id, day)? {
+        applicable = target.map(|t| t > 0 && count >= t).unwrap_or(false);
+    }
     let state = crate::day_state::eval_day_state(applicable, target, count, day, today);
     let library_id = period_repo::membership_on(conn, &task.id, day)?.map(|m| m.library_id);
     let can_undo =
@@ -77,7 +82,8 @@ fn build_day_view(conn: &Connection, task: Task, today: &str) -> CoreResult<Task
     build_day_view_on(conn, task, today, today)
 }
 
-/// 一次性任务打卡达标 → 自动归档（004 决策：完成即终态，历史保留）。
+/// 一次性任务打卡达标 → 自动归档（004 决策：完成即终态，历史保留；
+/// 2026-09-02 修订：完成日当天仍在 Today/任务墙以完成态留痕，明天起退出）。
 /// 归档后返回的视图仍按归档前状态展示（调用方先 build 再归档）。
 fn auto_archive_once_on_completion(
     conn: &Connection,
@@ -224,6 +230,13 @@ pub fn undo(
 
     let target_record = completion_repo::latest_uncompensated_positive_any_day(conn, task_id)?
         .ok_or_else(|| CoreError::Validation("没有可撤销的打卡记录".into()))?;
+    // 一次性任务「完成即自动归档」的当天内撤销：撤前今日已达标（归档必为达标触发）
+    // 且撤后不再达标时，解除今天的归档，任务回到待打卡（2026-09-02 起）。
+    let auto_archived_today = task.status == dashboard_domain::TaskStatus::Archived
+        && task.recurrence == dashboard_domain::Recurrence::Once
+        && build_day_view(conn, task.clone(), &today)
+            .map(|v| v.state == crate::day_state::TaskDayState::Completed.as_str())
+            .unwrap_or(false);
     // 补偿必须记在被撤记录的逻辑日：日聚合全部按 logical_day 分组，
     // 记到"今天"会既改不动历史日、又污染今天的账面。
     completion_repo::append(
@@ -241,7 +254,7 @@ pub fn undo(
     log_activity(
         conn,
         chrono::Utc::now(),
-        actor,
+        actor.clone(),
         "task.undo",
         "task",
         Some(task_id),
@@ -251,7 +264,14 @@ pub fn undo(
         }),
     );
     snapshot::refresh(conn);
-    build_day_view(conn, task, &today)
+    let mut view = build_day_view(conn, task, &today)?;
+    if auto_archived_today
+        && view.state != crate::day_state::TaskDayState::Completed.as_str()
+        && crate::task_service::unarchive_if_archived_today(conn, task_id, actor)?
+    {
+        view = build_day_view(conn, crate::task_service::get_task(conn, task_id)?, &today)?;
+    }
+    Ok(view)
 }
 
 /// 兼容旧协议：`task complete` → 补满今日目标；`task reopen` → 今日清零。

@@ -255,6 +255,45 @@ pub fn archive_task(conn: &rusqlite::Connection, id: &str, actor: Actor) -> Core
     get_task(conn, id)
 }
 
+/// 解除「今天刚发生的归档」：恢复 Active 并重开今天关闭的活动区间
+/// （不新开区间，避免归档-恢复-再归档在同日留下零长度区间）。
+/// 仅当任务已归档且确有区间于今天关闭；返回是否执行。
+/// 用途：一次性任务完成即自动归档后，当天内撤销完成应能回到待打卡。
+pub fn unarchive_if_archived_today(
+    conn: &rusqlite::Connection,
+    id: &str,
+    actor: Actor,
+) -> CoreResult<bool> {
+    let existing = get_task(conn, id)?;
+    if existing.status != TaskStatus::Archived {
+        return Ok(false);
+    }
+    let today = local_today();
+    if !period_repo::closed_on(conn, id, &today)? {
+        return Ok(false);
+    }
+    task_repo::update(
+        conn,
+        id,
+        &task_repo::TaskPatch {
+            status: Some(TaskStatus::Active),
+            ..Default::default()
+        },
+    )?;
+    period_repo::reopen_activity_closed_on(conn, id, &today)?;
+    log_activity(
+        conn,
+        chrono::Utc::now(),
+        actor,
+        "task.unarchive",
+        "task",
+        Some(id),
+        &serde_json::json!({ "title": existing.title, "via": "undo_same_day" }),
+    );
+    snapshot::refresh(conn);
+    Ok(true)
+}
+
 /// 恢复任务：重新启用并开启新活动区间（归档与恢复之间显示为不适用）。
 pub fn restore_task(conn: &rusqlite::Connection, id: &str, actor: Actor) -> CoreResult<Task> {
     let existing = get_task(conn, id)?;

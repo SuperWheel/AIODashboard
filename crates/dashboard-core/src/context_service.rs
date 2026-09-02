@@ -19,7 +19,7 @@ pub struct ProjectSummary {
 
 #[derive(Debug, Serialize)]
 pub struct TodayStats {
-    /// 今日有效任务数（活动中且今天适用）
+    /// 今日在册且适用的任务数（含今天完成的一次性任务）
     pub task_total: i64,
     /// 今日已达标任务数
     pub completed_today: i64,
@@ -63,20 +63,30 @@ pub fn local_today() -> String {
     Local::now().date_naive().format("%Y-%m-%d").to_string()
 }
 
-/// 今日任务视图列表：全部启用且今天适用的任务，按状态分组排序（进行中 > 待完成 > 已完成）。
+/// 今日任务视图列表：今天在册（活动区间覆盖今天，含今天刚归档）且今天适用的任务，
+/// 按状态分组排序（进行中 > 待完成 > 已完成）。
+/// 今天完成的一次性任务以完成态保留（完成即归档，但当留痕），明天起退出。
 pub fn today_task_views(conn: &Connection) -> CoreResult<Vec<TaskDayView>> {
+    let today = local_today();
+    let covering: std::collections::HashSet<String> =
+        ds::period_repo::task_ids_covering(conn, &today)?
+            .into_iter()
+            .collect();
+    // 全量（不限 status）按创建时间排序后过滤，保持「档内最新在前」的既有次序
     let tasks = ds::task_repo::list(
         conn,
         &ds::task_repo::TaskQuery {
-            status: Some(TaskStatus::Active),
             limit: 10_000,
             ..Default::default()
         },
     )?;
     let mut views = Vec::new();
     for t in tasks {
+        if !covering.contains(&t.id) {
+            continue;
+        }
         let view = crate::checkin_service::task_day_view(conn, &t.id)?;
-        // 今天不适用的任务（无有效目标等）不进今日列表
+        // 今天不适用的任务（无有效目标、手动归档未完成的关闭日等）不进今日列表
         if view.state == crate::day_state::TaskDayState::NotApplicable.as_str() {
             continue;
         }
@@ -92,7 +102,7 @@ pub fn today_task_views(conn: &Connection) -> CoreResult<Vec<TaskDayView>> {
     Ok(views)
 }
 
-/// 任务墙视图：全部启用任务的当日视图（**含**今天不适用者）。
+/// 任务墙视图：当日在册任务的当日视图。
 /// Today 只看今日适用；任务墙要展示"存在但今天轮空"的卡（否则每周任务
 /// 在非适用日会从任务页整卡消失）。顺序按创建时间升序。
 pub fn wall_task_views(conn: &Connection) -> CoreResult<Vec<TaskDayView>> {
@@ -100,16 +110,20 @@ pub fn wall_task_views(conn: &Connection) -> CoreResult<Vec<TaskDayView>> {
     wall_task_views_on(conn, &today)
 }
 
-/// 任务墙视图（指定逻辑日）：全部启用任务在该日的视图。
-/// 「今天」含当日不适用者（004：轮空卡不消失）；**翻页到其他日期时过滤不适用任务**
-/// （如该日尚未创建的任务不出现在那天）。过去日未达标 = missed、未来日 = pending。
-/// 顺序按创建时间升序。
+/// 任务墙视图（指定逻辑日）：活动区间覆盖该日的全部任务在该日的视图
+/// （含已归档任务——历史翻页可回看；覆盖含关闭日当天，完成日留痕）。
+/// 「今天」含当日不适用者（004：轮空卡不消失，但仅限启用中任务）；
+/// **翻页到其他日期时过滤不适用任务**（如该日尚未创建的任务不出现在那天）。
+/// 过去日未达标 = missed、未来日 = pending。顺序按创建时间升序。
 pub fn wall_task_views_on(conn: &Connection, day: &str) -> CoreResult<Vec<TaskDayView>> {
     crate::logical_day::parse_day(day)?;
+    let covering: std::collections::HashSet<String> =
+        ds::period_repo::task_ids_covering(conn, day)?
+            .into_iter()
+            .collect();
     let tasks = ds::task_repo::list(
         conn,
         &ds::task_repo::TaskQuery {
-            status: Some(TaskStatus::Active),
             limit: 10_000,
             ..Default::default()
         },
@@ -117,9 +131,17 @@ pub fn wall_task_views_on(conn: &Connection, day: &str) -> CoreResult<Vec<TaskDa
     let include_na = day == local_today();
     let mut views = Vec::with_capacity(tasks.len());
     for t in tasks {
-        let view = crate::checkin_service::task_day_view_on(conn, &t.id, day)?;
-        if !include_na && view.state == crate::day_state::TaskDayState::NotApplicable.as_str() {
+        if !covering.contains(&t.id) {
             continue;
+        }
+        let view = crate::checkin_service::task_day_view_on(conn, &t.id, day)?;
+        if view.state == crate::day_state::TaskDayState::NotApplicable.as_str() {
+            // 已归档任务的 NA 卡任何日期都不展示（手动归档 = 立即退出）；
+            // 轮空卡保留仅限启用中任务的「今天」。
+            let keep = include_na && t.status == TaskStatus::Active;
+            if !keep {
+                continue;
+            }
         }
         views.push(view);
     }

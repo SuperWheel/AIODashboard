@@ -196,6 +196,43 @@ pub fn archived_days(
     rows.collect()
 }
 
+/// 某日「在册」任务 id：活动区间覆盖 day（start_day <= day <= end_day，关闭日含当天）
+/// 或区间仍开放。Today/任务墙的候选集（含当天归档与历史日归档的任务），
+/// 展示状态由 core 按账本逐日判定。
+pub fn task_ids_covering(conn: &Connection, day: &str) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT task_id FROM task_activity_periods
+         WHERE start_day <= ?1 AND (end_day IS NULL OR end_day >= ?1)",
+    )?;
+    let rows = stmt.query_map(params![day], |r| r.get::<_, String>(0))?;
+    rows.collect()
+}
+
+/// 任务是否存在 day 当天关闭的活动区间（end_day == day）。
+pub fn closed_on(conn: &Connection, task_id: &str, day: &str) -> rusqlite::Result<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM task_activity_periods
+         WHERE task_id = ?1 AND end_day = ?2",
+        params![task_id, day],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
+}
+
+/// 重开 day 当天关闭的活动区间（end_day = day → NULL），返回受影响行数。
+/// 用于「撤销今天刚发生的归档」：不产生新的零长度区间。
+pub fn reopen_activity_closed_on(
+    conn: &Connection,
+    task_id: &str,
+    day: &str,
+) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE task_activity_periods SET end_day = NULL
+         WHERE task_id = ?1 AND end_day = ?2",
+        params![task_id, day],
+    )
+}
+
 // ---------- 归属区间 ----------
 
 pub fn list_memberships(
