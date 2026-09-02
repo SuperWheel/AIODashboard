@@ -212,6 +212,19 @@ export default function TasksView({
   // 与打卡状态解耦（完成不移动卡片）；拖拽落位只改 sort_order/星级。
   const wallViews = useMemo(() => views, [views]);
 
+  // 拖拽排序（006 v2）：实时重排预览 + 淡色占位块 + FLIP 让位动画；
+  // 拖的是发牌序列（均衡发牌算法不变），不是列。
+  const { preview, ghostH, order, wrapperProps, isDragging, flipRegister } = useTaskDnd(
+    () => wallViews.map((v) => v.task),
+    onChanged,
+  );
+  // 拖拽中按预览序列渲染（memo 化：预览/墙数据不变则不发牌）
+  const displayViews = useMemo(
+    () => order(wallViews),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [wallViews, preview],
+  );
+
   // 各卡实测高度（task id → px）；相等值不更新，避免重排循环
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const reportHeight = useCallback((id: string, h: number) => {
@@ -224,8 +237,8 @@ export default function TasksView({
 
   // 混排列分配：实测高度到达/任务集/列数变化时重算（发牌前缀稳定，不跳动）
   const columns = useMemo(
-    () => dealColumns(wallViews, twoCols ? 2 : 1, heightFor),
-    [wallViews, twoCols, heightFor],
+    () => dealColumns(displayViews, twoCols ? 2 : 1, heightFor),
+    [displayViews, twoCols, heightFor],
   );
 
   // navParam 以 tsk_ 开头 → 任务详情
@@ -336,29 +349,15 @@ export default function TasksView({
     );
   };
 
-  // 拖拽排序（006）：拖的是发牌序列（均衡发牌算法不变），不是列；
-  // 共享 useTaskDnd（含 WKWebView 必须 setData 的修复）。
-  const { dragId, indicator, wrapperProps } = useTaskDnd(
-    () => wallViews.map((v) => v.task),
-    onChanged,
-  );
-
-  const renderCard = (v: TaskDayView) => {
-    const marked = indicator(v.task.id);
-    return (
-      <div
-        key={v.task.id}
-        {...wrapperProps(v.task.id)}
-        style={{
-          boxShadow:
-            marked === "before"
-              ? "0 -2px 0 var(--accent)"
-              : marked === "after"
-                ? "0 2px 0 var(--accent)"
-                : undefined,
-          opacity: dragId === v.task.id ? 0.4 : undefined,
-        }}
-      >
+  const renderCard = (v: TaskDayView) => (
+    <div key={v.task.id} ref={flipRegister(v.task.id)} {...wrapperProps(v.task.id)}>
+      {isDragging(v.task.id) ? (
+        // 被拖卡 = 同形状淡色圆角矩形占位块（即落点标记）
+        <div
+          className="rounded-2xl border border-line bg-hover"
+          style={{ height: ghostH }}
+        />
+      ) : (
         <MeasuredCard id={v.task.id} onHeight={reportHeight}>
           <TaskCard
             view={v}
@@ -370,9 +369,9 @@ export default function TasksView({
             interactive={isToday}
           />
         </MeasuredCard>
-      </div>
-    );
-  };
+      )}
+    </div>
+  );
 
   if (detailId) {
     const task = views.find((v) => v.task.id === detailId)?.task ?? archived.find((t) => t.id === detailId);
@@ -469,7 +468,7 @@ export default function TasksView({
           </div>
         ) : (
           STYLE_SECTIONS.map((s) => {
-            const items = wallViews.filter((v) => v.task.card_style === s.key);
+            const items = displayViews.filter((v) => v.task.card_style === s.key);
             if (items.length === 0) return null;
             return (
               <div key={s.key} className="mt-5 first:mt-4">

@@ -154,10 +154,17 @@ export default function TodayView({
     onChanged();
   };
 
-  // 今日卡拖拽（006 共享 hook）：未完成组内手动排序；跨档同样弹改级确认
-  const { dragId, indicator, wrapperProps } = useTaskDnd(
+  // 今日卡拖拽（006 v2 共享 hook）：实时重排预览 + 淡色占位块 + FLIP 动画；
+  // 提交成功后把新序列写回位置快照（pin），会话内顺序即所拖
+  const { preview, ghostH, order, wrapperProps, isDragging, flipRegister } = useTaskDnd(
     () => displayTasks.map((v) => v.task),
     onChanged,
+    (ids) => setPin(ids),
+  );
+  const shownTasks = useMemo(
+    () => order(displayTasks),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [displayTasks, preview],
   );
 
   return (
@@ -385,31 +392,27 @@ export default function TodayView({
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
-            {displayTasks.map((v) => {
-              const marked = indicator(v.task.id);
-              return (
-                <div
-                  key={v.task.id}
-                  {...wrapperProps(v.task.id)}
-                  style={{
-                    boxShadow:
-                      marked === "before"
-                        ? "0 -2px 0 var(--accent)"
-                        : marked === "after"
-                          ? "0 2px 0 var(--accent)"
-                          : undefined,
-                    opacity: dragId === v.task.id ? 0.4 : undefined,
-                    borderRadius: 12,
-                  }}
-                >
+            {shownTasks.map((v) => (
+              <div
+                key={v.task.id}
+                ref={flipRegister(v.task.id)}
+                {...wrapperProps(v.task.id)}
+              >
+                {isDragging(v.task.id) ? (
+                  // 被拖卡 = 同形状淡色圆角矩形占位块（即落点标记）
+                  <div
+                    className="rounded-xl border border-line bg-hover"
+                    style={{ height: ghostH }}
+                  />
+                ) : (
                   <TodayTaskCard
                     view={v}
                     onChanged={() => afterAction(v.task.id)}
                     onOpenDetail={(id) => onNav("tasks", id)}
                   />
-                </div>
-              );
-            })}
+                )}
+              </div>
+            ))}
           </div>
         )}
       </Card>
