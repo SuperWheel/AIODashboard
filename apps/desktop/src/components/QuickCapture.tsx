@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { toastError } from "./DialogHost";
+import { inputCls } from "./ui";
 
 type Target = "today" | "inbox";
 
@@ -67,7 +68,7 @@ export default function QuickCapture({
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submit()}
         placeholder="一个想法、一条待办、一个链接…"
-        className="mt-3 w-full rounded-xl border border-line bg-surface2 px-3 py-2 text-sm outline-none placeholder:text-ink3 focus:border-accent/50"
+        className={`${inputCls} mt-3 placeholder:text-ink3`}
       />
       <div className="mt-2 text-[11px] text-ink3">{TARGET_META[target].hint}</div>
     </div>

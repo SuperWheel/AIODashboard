@@ -5,7 +5,7 @@ import type { ArchivedTask, CardStyle, Task, TaskDayView } from "../types";
 import TaskCard from "./TaskCard";
 import TaskDetailView from "./TaskDetailView";
 import TaskEditor from "./TaskEditor";
-import { Button, DatePickerPanel, Empty, inputClsSm, PageHeader } from "./ui";
+import { Button, DatePickerPanel, Empty, inputCls, PageHeader } from "./ui";
 import { toastError } from "./DialogHost";
 import { taskColor } from "../taskVisual";
 
@@ -475,7 +475,7 @@ export default function TasksView({
                   value={archQuery}
                   onChange={(e) => setArchQuery(e.target.value)}
                   placeholder="搜索归档任务…"
-                  className={`${inputClsSm} max-w-56`}
+                  className={`${inputCls} max-w-56`}
                 />
                 <div className="flex items-center rounded-lg bg-hover p-0.5">
                   {(

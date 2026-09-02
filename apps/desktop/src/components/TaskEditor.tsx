@@ -257,7 +257,7 @@ export default function TaskEditor({
                       type="button"
                       title={`每周${label}`}
                       onClick={() => toggleWeekday(w)}
-                      className={`h-8 w-8 rounded-lg border text-xs transition-colors ${
+                      className={`h-7 w-7 rounded-lg border text-xs transition-colors ${
                         on
                           ? "border-accent/40 bg-accent/10 font-medium text-accent"
                           : "border-line text-ink3 hover:bg-hover hover:text-ink"

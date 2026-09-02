@@ -27,7 +27,7 @@ export function Badge({ children, tone = "slate" }: { children: ReactNode; tone?
 export type BadgeTone = "slate" | "green" | "amber" | "red" | "blue" | "violet";
 
 /** 统一按钮：primary=主操作，violet=收件箱收集，danger=破坏性操作，ghost=次级操作。
- *  圆角矩形，高度 h-9（py-1.5 + text-sm），全产品一致。 */
+ *  圆角矩形，高度 h-7（28px）——与输入框/下拉/分段控件同一档，全产品一致。 */
 export function Button({
   variant = "primary",
   className = "",
@@ -43,22 +43,19 @@ export function Button({
   };
   return (
     <button
-      className={`inline-flex h-9 items-center justify-center rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-40 ${variants[variant]} ${className}`}
+      className={`inline-flex h-7 items-center justify-center rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 ${variants[variant]} ${className}`}
       {...rest}
     />
   );
 }
 
-/** 表单输入框统一规格：h-9、圆角矩形、surface2 底。 */
+/** 输入框统一规格：h-7（28px）、圆角矩形、surface2 底。
+ *  单档高度规则（2026-09-02 用户拍板）：输入框/下拉/按钮/分段控件全部 h-7，
+ *  同排不再出现高度差；分段控件 = bg-hover p-0.5 + h-6 内块（总高同为 28px）。 */
 export const inputCls =
-  "h-9 w-full rounded-lg border border-line bg-surface2 px-2.5 text-sm outline-none transition-colors focus:border-accent/50 disabled:opacity-50";
-
-/** 工具栏紧凑输入框：h-7（28px），与分段控件（bg-hover p-0.5 + h-6 内块）等高。
- *  规则：表单控件（编辑器/弹窗）一律 inputCls(h-9)；工具栏控件一律 inputClsSm(h-7)。 */
-export const inputClsSm =
   "h-7 w-full rounded-lg border border-line bg-surface2 px-2.5 text-sm outline-none transition-colors focus:border-accent/50 disabled:opacity-50";
 
-/** 下拉选择：与输入框同高同底（h-9），右侧自带 ▾（native 箭头隐藏）。 */
+/** 下拉选择：与输入框同高同底（h-7），右侧自带 ▾（native 箭头隐藏）。 */
 export function FieldSelect({
   value,
   onChange,
@@ -119,7 +116,7 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         title="选择表情"
-        className="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface2 text-base transition-colors hover:bg-hover"
+        className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-surface2 text-sm transition-colors hover:bg-hover"
       >
         😀
       </button>
@@ -263,7 +260,7 @@ export function DatePickerPanel({
             setVm(i);
             setLevel("day");
           }}
-          className={`${cell} h-9 ${
+          className={`${cell} h-8 ${
             vy === init.y && i === init.m
               ? "bg-accent/10 font-medium text-accent"
               : vy === cur.y && i === cur.m
@@ -287,7 +284,7 @@ export function DatePickerPanel({
             setVy(y);
             setLevel("month");
           }}
-          className={`${cell} h-9 tabular-nums ${
+          className={`${cell} h-8 tabular-nums ${
             y === init.y
               ? "bg-accent/10 font-medium text-accent"
               : y === cur.y
