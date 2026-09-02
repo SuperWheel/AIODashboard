@@ -65,6 +65,13 @@ fn list_tasks(scope: Option<String>) -> R<Vec<Task>> {
     core::task_service::list_tasks(&c, &q).map_err(|e| e.to_string())
 }
 
+/// 归档任务列表（含归档日 MAX(end_day)，归档页分组用）。
+#[tauri::command]
+fn list_archived_tasks() -> R<Vec<core::task_service::ArchivedTask>> {
+    let c = conn()?;
+    core::task_service::list_archived_tasks(&c).map_err(|e| e.to_string())
+}
+
 // Tauri 只对命令顶层参数做 camelCase↔snake_case 转换，嵌套 struct 走纯 serde，
 // 必须显式 rename_all，否则前端发的 camelCase 键会被静默丢弃。
 #[derive(Debug, serde::Deserialize)]
@@ -653,6 +660,7 @@ pub fn run() {
             get_today,
             task_wall_views,
             list_tasks,
+            list_archived_tasks,
             create_task,
             update_task,
             archive_task,

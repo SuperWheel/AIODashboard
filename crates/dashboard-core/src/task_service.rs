@@ -166,6 +166,34 @@ pub fn list_tasks(conn: &rusqlite::Connection, query: &TaskQuery) -> CoreResult<
     Ok(tasks)
 }
 
+/// 归档任务 + 归档日（活动区间最后关闭日 MAX(end_day)），归档页分组/展示用。
+#[derive(Debug, Serialize)]
+pub struct ArchivedTask {
+    #[serde(flatten)]
+    pub task: Task,
+    pub archived_day: Option<String>,
+}
+
+/// 归档任务列表（含归档日）。
+pub fn list_archived_tasks(conn: &rusqlite::Connection) -> CoreResult<Vec<ArchivedTask>> {
+    let tasks = list_tasks(
+        conn,
+        &TaskQuery {
+            status: Some(TaskStatus::Archived),
+            limit: 10_000,
+            ..Default::default()
+        },
+    )?;
+    let days = period_repo::archived_days(conn)?;
+    Ok(tasks
+        .into_iter()
+        .map(|task| {
+            let archived_day = days.get(&task.id).cloned();
+            ArchivedTask { task, archived_day }
+        })
+        .collect())
+}
+
 /// 回填 Task.recurrence = 当日生效目标区间的循环规则（存储无此列，读侧组装）。
 fn fill_current_recurrence(conn: &rusqlite::Connection, t: &mut Task) -> CoreResult<()> {
     if let Some(p) = period_repo::target_on(conn, &t.id, &local_today())? {

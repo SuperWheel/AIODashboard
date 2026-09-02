@@ -518,6 +518,25 @@ fn wall_views_on_past_and_future_day() {
     assert!(core::context_service::wall_task_views_on(&c, "not-a-day").is_err());
 }
 
+// ---------- 归档列表（含归档日） ----------
+
+#[test]
+fn archived_list_includes_archived_day() {
+    let c = conn();
+    let a = make_task(&c, 1);
+    let _b = make_task(&c, 1);
+    core::task_service::archive_task(&c, &a.id, Actor::User).unwrap();
+    let list = core::task_service::list_archived_tasks(&c).unwrap();
+    // 只有 a 归档；b 仍在启用列表
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].task.id, a.id);
+    assert_eq!(list[0].archived_day.as_deref(), Some(today().as_str()));
+    // 归档再恢复：归档日仍保留（历史关闭区间仍在）
+    core::task_service::restore_task(&c, &a.id, Actor::User).unwrap();
+    let list = core::task_service::list_archived_tasks(&c).unwrap();
+    assert!(list.is_empty());
+}
+
 // ---------- 今日上下文 ----------
 
 #[test]

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { localToday, useMinWidth, usePolling } from "../hooks";
-import type { CardStyle, Task, TaskDayView } from "../types";
+import type { ArchivedTask, CardStyle, Task, TaskDayView } from "../types";
 import TaskCard from "./TaskCard";
 import TaskDetailView from "./TaskDetailView";
 import TaskEditor from "./TaskEditor";
-import { Button, DatePickerPanel, Empty, PageHeader } from "./ui";
+import { Button, DatePickerPanel, Empty, inputCls, PageHeader } from "./ui";
 import { toastError } from "./DialogHost";
+import { taskColor } from "../taskVisual";
 
 type Tab = "active" | "archived";
 /** 卡片墙视图：smart = 均衡发牌混排；grouped = 按卡片类型分区 */
@@ -26,6 +27,12 @@ function shiftDay(day: string, n: number): string {
 function dayLabel(day: string): string {
   const d = new Date(`${day}T00:00:00`);
   return `${day} · 周${WEEKDAYS[d.getDay()]}`;
+}
+
+/** "2026-09" → "2026年9月"；未知时间原样显示。 */
+function monthLabel(key: string): string {
+  const m = key.match(/^(\d{4})-(\d{2})$/);
+  return m ? `${m[1]}年${Number(m[2])}月` : key;
 }
 
 /** 日期导航：◀ 日期 ▶ 一体分段控件（圆角矩形，与快速捕捉切换器同规格）；
@@ -159,7 +166,10 @@ export default function TasksView({
 }) {
   const [tab, setTab] = useState<Tab>("active");
   const [views, setViews] = useState<TaskDayView[]>([]);
-  const [archived, setArchived] = useState<Task[]>([]);
+  const [archived, setArchived] = useState<ArchivedTask[]>([]);
+  // 归档页：搜索 + 排序（归档时间/名称/创建时间）
+  const [archQuery, setArchQuery] = useState("");
+  const [archSort, setArchSort] = useState<"archived" | "name" | "created">("archived");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   // 日期翻页：任务墙查看的逻辑日（默认今天；过去日只读回看）
@@ -218,7 +228,7 @@ export default function TasksView({
       .then(setViews)
       .catch(console.error);
     api
-      .listTasks("archived")
+      .listArchivedTasks()
       .then(setArchived)
       .catch(console.error);
   };
@@ -232,6 +242,74 @@ export default function TasksView({
   const openEditor = (task: Task | null) => {
     setEditing(task);
     setEditorOpen(true);
+  };
+
+  // 归档页派生：过滤 + 排序 + 按归档月份分组（排序=归档时间时）
+  const archShown = useMemo(() => {
+    const q = archQuery.trim().toLowerCase();
+    const list = archived.filter((t) => !q || t.title.toLowerCase().includes(q));
+    if (archSort === "name") {
+      return [...list].sort((a, b) => a.title.localeCompare(b.title, "zh"));
+    }
+    if (archSort === "created") {
+      return [...list].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    }
+    return [...list].sort(
+      (a, b) =>
+        (b.archived_day ?? "").localeCompare(a.archived_day ?? "") ||
+        b.created_at.localeCompare(a.created_at),
+    );
+  }, [archived, archQuery, archSort]);
+
+  const archGroups = useMemo(() => {
+    if (archSort !== "archived") return null;
+    const map = new Map<string, ArchivedTask[]>();
+    for (const t of archShown) {
+      const k = t.archived_day?.slice(0, 7) ?? "未知时间";
+      const arr = map.get(k);
+      if (arr) arr.push(t);
+      else map.set(k, [t]);
+    }
+    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [archShown, archSort]);
+
+  const restoreTask = async (id: string) => {
+    try {
+      await api.restoreTask(id);
+      onChanged();
+    } catch (e) {
+      toastError(String(e));
+    }
+  };
+
+  const archCard = (t: ArchivedTask) => {
+    const accent = taskColor(t.color_hex);
+    return (
+      <div
+        key={t.id}
+        className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3"
+      >
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base"
+          style={{ background: `color-mix(in srgb, ${accent} 16%, transparent)` }}
+        >
+          {t.icon || "✓"}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm text-ink">{t.title}</div>
+          <div className="mt-0.5 text-[11px] text-ink3">
+            {t.archived_day ? `归档于 ${t.archived_day}` : "归档时间未知"} · 创建于{" "}
+            {t.created_at.slice(0, 10)}
+          </div>
+        </div>
+        <Button variant="ghost" onClick={() => openEditor(t)}>
+          查看
+        </Button>
+        <Button variant="ghost" onClick={() => restoreTask(t.id)}>
+          恢复
+        </Button>
+      </div>
+    );
   };
 
   const renderCard = (v: TaskDayView) => (
@@ -276,7 +354,7 @@ export default function TasksView({
             {(
               [
                 { key: "active", label: "进行中" },
-                { key: "archived", label: `已归档（${archived.length}）` },
+                { key: "archived", label: "已归档" },
               ] as { key: Tab; label: string }[]
             ).map((t) => (
               <button
@@ -358,40 +436,67 @@ export default function TasksView({
           })
         ))}
 
-      {tab === "archived" &&
-        (archived.length === 0 ? (
-          <div className="mt-4">
+      {tab === "archived" && (
+        <div className="mt-4">
+          {archived.length === 0 ? (
             <Empty text="没有已归档的任务" glyph="🗃" />
-          </div>
-        ) : (
-          <div className="mt-4 rounded-2xl border border-line bg-surface">
-            {archived.map((t) => (
-              <div
-                key={t.id}
-                className="flex items-center gap-3 border-b border-line/60 px-4 py-2.5 last:border-b-0"
-              >
-                <span className="text-sm text-ink3">{t.icon || "✓"}</span>
-                <span className="flex-1 truncate text-sm text-ink2">{t.title}</span>
-                <Button variant="ghost" onClick={() => openEditor(t)}>
-                  查看
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={async () => {
-                    try {
-                      await api.restoreTask(t.id);
-                      onChanged();
-                    } catch (e) {
-                      toastError(String(e));
-                    }
-                  }}
-                >
-                  恢复
-                </Button>
+          ) : (
+            <>
+              {/* 搜索 + 排序（分段控件，与日期控件同规格） */}
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={archQuery}
+                  onChange={(e) => setArchQuery(e.target.value)}
+                  placeholder="搜索归档任务…"
+                  className={`${inputCls} max-w-56`}
+                />
+                <div className="flex items-center rounded-lg bg-hover p-0.5">
+                  {(
+                    [
+                      ["archived", "归档时间"],
+                      ["name", "名称"],
+                      ["created", "创建时间"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <button
+                      key={k}
+                      onClick={() => setArchSort(k)}
+                      className={`h-6 rounded-md px-2.5 text-xs transition-colors ${
+                        archSort === k
+                          ? "bg-surface font-medium text-ink shadow-sm"
+                          : "text-ink2 hover:text-ink"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-        ))}
+
+              {archShown.length === 0 ? (
+                <div className="mt-4">
+                  <Empty text={`没有匹配「${archQuery}」的归档任务`} glyph="🔍" />
+                </div>
+              ) : archGroups ? (
+                archGroups.map(([month, items]) => (
+                  <div key={month} className="mt-5 first:mt-4">
+                    <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink3">
+                      {monthLabel(month)} · {items.length}
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+                      {items.map(archCard)}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="mt-4 grid grid-cols-1 gap-2 xl:grid-cols-2">
+                  {archShown.map(archCard)}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {editorOpen && (
         <TaskEditor

@@ -184,6 +184,18 @@ pub fn close_open_activity(conn: &Connection, task_id: &str, day: &str) -> rusql
     )
 }
 
+/// 各任务的归档日（活动区间最后关闭日 MAX(end_day)；无关闭区间则不出现）。
+pub fn archived_days(
+    conn: &Connection,
+) -> rusqlite::Result<std::collections::HashMap<String, String>> {
+    let mut stmt = conn.prepare(
+        "SELECT task_id, MAX(end_day) FROM task_activity_periods
+         WHERE end_day IS NOT NULL GROUP BY task_id",
+    )?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    rows.collect()
+}
+
 // ---------- 归属区间 ----------
 
 pub fn list_memberships(

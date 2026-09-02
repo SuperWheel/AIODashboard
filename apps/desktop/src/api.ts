@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  ArchivedTask,
   CardStyle,
   DateLibrary,
   GlobalYearHeatmap,
@@ -79,6 +80,8 @@ export const api = {
   taskWallViews: (day?: string) => invoke<TaskDayView[]>("task_wall_views", { day: day ?? null }),
   listTasks: (scope?: "all" | "active" | "archived") =>
     invoke<Task[]>("list_tasks", { scope }),
+  /** 归档任务列表（含归档日，归档页用） */
+  listArchivedTasks: () => invoke<ArchivedTask[]>("list_archived_tasks"),
   createTask: (params: CreateTaskParams) =>
     invoke<Task>("create_task", {
       params: {

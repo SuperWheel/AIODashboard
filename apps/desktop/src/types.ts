@@ -28,6 +28,11 @@ export interface Task {
   updated_at: string;
 }
 
+/** 归档任务（归档页用）：任务本体 + 归档日（活动区间最后关闭日）。 */
+export interface ArchivedTask extends Task {
+  archived_day: string | null;
+}
+
 export type TaskDayState =
   | "not_applicable"
   | "pending"
