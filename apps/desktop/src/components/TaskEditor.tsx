@@ -30,6 +30,7 @@ export default function TaskEditor({
   const [target, setTarget] = useState<number>(1);
   const [unit, setUnit] = useState(task?.unit ?? "");
   const [cardStyle, setCardStyle] = useState<CardStyle>(task?.card_style ?? "day");
+  const [priority, setPriority] = useState(task?.priority ?? 0);
   const [recurrence, setRecurrence] = useState<Recurrence>(task?.recurrence ?? defaultRecurrence);
   const [projectId, setProjectId] = useState<string>(task?.project_id ?? "");
   const [libraryId, setLibraryId] = useState<string>("");
@@ -86,6 +87,7 @@ export default function TaskEditor({
           title: t,
           icon,
           color,
+          priority,
           ...(dayLoaded ? { target, recurrence } : {}),
           unit,
           cardStyle,
@@ -100,6 +102,7 @@ export default function TaskEditor({
           title: t,
           icon,
           color,
+          priority,
           target,
           unit,
           cardStyle,
@@ -189,6 +192,33 @@ export default function TaskEditor({
         <div className="mt-3">
           <label className={labelCls}>主题色</label>
           <ColorSwatches value={color} onChange={setColor} />
+        </div>
+
+        <div className="mt-3">
+          <label className={labelCls}>重要性（星级高的排在任务墙前面）</label>
+          <div className="flex items-center gap-1">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setPriority(priority === n ? 0 : n)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-base transition-colors hover:bg-hover"
+                style={{ color: n <= priority ? "#F5B942" : "var(--ink-3)" }}
+                title={n <= priority ? `设为 ${n} 星（再点清除）` : `设为 ${n} 星`}
+              >
+                {n <= priority ? "★" : "☆"}
+              </button>
+            ))}
+            {priority > 0 && (
+              <button
+                type="button"
+                className="ml-1 rounded-lg px-2 py-1 text-xs text-ink3 transition-colors hover:bg-hover hover:text-ink"
+                onClick={() => setPriority(0)}
+              >
+                清除
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="mt-3 grid grid-cols-3 gap-3">

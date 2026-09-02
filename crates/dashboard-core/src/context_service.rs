@@ -123,8 +123,25 @@ pub fn wall_task_views_on(conn: &Connection, day: &str) -> CoreResult<Vec<TaskDa
         }
         views.push(view);
     }
-    views.sort_by_key(|v| v.task.created_at);
+    sort_wall_views(&mut views);
     Ok(views)
+}
+
+/// 任务墙排序口径（006）：星级降序分档 → 手动 sort_order 升序 → created_at 升序。
+/// 打卡状态不参与排序（与状态解耦，完成不移动卡片）。
+fn sort_wall_views(views: &mut [crate::checkin_service::TaskDayView]) {
+    views.sort_by(|a, b| {
+        b.task
+            .priority
+            .cmp(&a.task.priority)
+            .then(
+                a.task
+                    .sort_order
+                    .partial_cmp(&b.task.sort_order)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
+            .then(a.task.created_at.cmp(&b.task.created_at))
+    });
 }
 
 /// 近 7 天已错过天数（所有启用任务合计）。

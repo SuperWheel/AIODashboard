@@ -6,7 +6,7 @@ import TaskCard from "./TaskCard";
 import TaskDetailView from "./TaskDetailView";
 import TaskEditor from "./TaskEditor";
 import { Button, DatePickerPanel, Empty, inputCls, PageHeader } from "./ui";
-import { toastError } from "./DialogHost";
+import { confirmDialog, toastError } from "./DialogHost";
 import { taskColor } from "../taskVisual";
 
 type Tab = "active" | "archived";
@@ -27,6 +27,11 @@ function shiftDay(day: string, n: number): string {
 function dayLabel(day: string): string {
   const d = new Date(`${day}T00:00:00`);
   return `${day} · 周${WEEKDAYS[d.getDay()]}`;
+}
+
+/** 星级文案：0=未评级，N=N 星。 */
+function starText(n: number): string {
+  return n > 0 ? `${n} 星` : "未评级";
 }
 
 /** "2026-09" → "2026年9月"；未知时间原样显示。 */
@@ -207,13 +212,9 @@ export default function TasksView({
     }
   };
 
-  // 墙序 = 创建时间升序，与打卡状态解耦：完成与否不改变卡片位置，
-  // 新任务固定排在最末（发牌时落到当前较矮一列的底部）。
-  // created_at 为 UTC RFC3339，字典序即时间序。
-  const wallViews = useMemo(
-    () => [...views].sort((a, b) => a.task.created_at.localeCompare(b.task.created_at)),
-    [views],
-  );
+  // 墙序由后端统一给（006）：星级降序分档 → sort_order 升序 → created_at 升序，
+  // 与打卡状态解耦（完成不移动卡片）；拖拽落位只改 sort_order/星级。
+  const wallViews = useMemo(() => views, [views]);
 
   // 各卡实测高度（task id → px）；相等值不更新，避免重排循环
   const [measured, setMeasured] = useState<Record<string, number>>({});
@@ -339,19 +340,96 @@ export default function TasksView({
     );
   };
 
-  const renderCard = (v: TaskDayView) => (
-    <MeasuredCard key={v.task.id} id={v.task.id} onHeight={reportHeight}>
-      <TaskCard
-        view={v}
-        refreshKey={refreshKey}
-        onChanged={onChanged}
-        onOpenDetail={(id) => onNav("tasks", id)}
-        onEdit={openEditor}
-        anchorDay={day}
-        interactive={isToday}
-      />
-    </MeasuredCard>
-  );
+  // 拖拽排序（006）：拖的是发牌序列（均衡发牌算法不变），不是列。
+  // 同星级档内落位直接生效；跨档落点弹确认框改成目标档星级。
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropMark, setDropMark] = useState<{ id: string; where: "before" | "after" } | null>(null);
+
+  const dropOn = async (target: { id: string; where: "before" | "after" }) => {
+    const dragged = dragId;
+    setDragId(null);
+    setDropMark(null);
+    if (!dragged || dragged === target.id) return;
+    const seq = wallViews.map((v) => v.task);
+    const drag = seq.find((t) => t.id === dragged);
+    if (!drag) return;
+    const others = seq.filter((t) => t.id !== dragged);
+    const idx = others.findIndex((t) => t.id === target.id);
+    if (idx < 0) return;
+    const beforeId = target.where === "before" ? (others[idx - 1]?.id ?? null) : others[idx].id;
+    const afterId = target.where === "before" ? others[idx].id : (others[idx + 1]?.id ?? null);
+    // 目标档 = 落点下方卡片的星级（无下方 = 上方卡片；均无 = 自身档不变）
+    const below = afterId ? others.find((t) => t.id === afterId) : undefined;
+    const above = beforeId ? others.find((t) => t.id === beforeId) : undefined;
+    const band = below?.priority ?? above?.priority ?? drag.priority;
+    try {
+      if (band === drag.priority) {
+        await api.moveTaskPosition(dragged, null, beforeId, afterId);
+      } else {
+        const ok = await confirmDialog(
+          "调整星级",
+          `将「${drag.title}」从${starText(drag.priority)}调整为${starText(band)}并移动到此处？`,
+        );
+        if (!ok) return;
+        await api.moveTaskPosition(dragged, band, beforeId, afterId);
+      }
+      onChanged();
+    } catch (e) {
+      toastError(String(e));
+    }
+  };
+
+  const renderCard = (v: TaskDayView) => {
+    const marked = dropMark?.id === v.task.id ? dropMark.where : null;
+    return (
+      <div
+        key={v.task.id}
+        draggable
+        onDragStart={(e) => {
+          setDragId(v.task.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragEnd={() => {
+          setDragId(null);
+          setDropMark(null);
+        }}
+        onDragOver={(e) => {
+          if (!dragId || dragId === v.task.id) return;
+          e.preventDefault();
+          const r = e.currentTarget.getBoundingClientRect();
+          setDropMark({
+            id: v.task.id,
+            where: e.clientY < r.top + r.height / 2 ? "before" : "after",
+          });
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          void dropOn({ id: v.task.id, where: dropMark?.id === v.task.id ? dropMark.where : "after" });
+        }}
+        style={{
+          boxShadow:
+            marked === "before"
+              ? "0 -2px 0 var(--accent)"
+              : marked === "after"
+                ? "0 2px 0 var(--accent)"
+                : undefined,
+          opacity: dragId === v.task.id ? 0.4 : undefined,
+        }}
+      >
+        <MeasuredCard id={v.task.id} onHeight={reportHeight}>
+          <TaskCard
+            view={v}
+            refreshKey={refreshKey}
+            onChanged={onChanged}
+            onOpenDetail={(id) => onNav("tasks", id)}
+            onEdit={openEditor}
+            anchorDay={day}
+            interactive={isToday}
+          />
+        </MeasuredCard>
+      </div>
+    );
+  };
 
   if (detailId) {
     const task = views.find((v) => v.task.id === detailId)?.task ?? archived.find((t) => t.id === detailId);

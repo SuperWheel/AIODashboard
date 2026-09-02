@@ -75,6 +75,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         // 堵住"建表成功但版本号未落盘、崩溃后重跑"的窗口（004 design 决策 8）。
         conn.execute_batch(SCHEMA_V4)?;
     }
+    if version < 5 {
+        // V5：任务增星级与手动排序列（006）。同样加列与版本号同事务。
+        conn.execute_batch(SCHEMA_V5)?;
+    }
     Ok(())
 }
 
@@ -83,6 +87,15 @@ const SCHEMA_V4: &str = r#"
 BEGIN;
 ALTER TABLE task_target_periods ADD COLUMN recurrence TEXT;
 PRAGMA user_version = 4;
+COMMIT;
+"#;
+
+/// V5 仅加列：`tasks.priority`（0=未评级，1–5）与 `tasks.sort_order`（分数索引）。
+const SCHEMA_V5: &str = r#"
+BEGIN;
+ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tasks ADD COLUMN sort_order REAL NOT NULL DEFAULT 0;
+PRAGMA user_version = 5;
 COMMIT;
 "#;
 

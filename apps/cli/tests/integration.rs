@@ -95,6 +95,53 @@ fn chain_cli_create_then_core_read() {
 }
 
 #[test]
+fn chain_task_priority_flags() {
+    let env = Env::new();
+    // create --priority 4
+    let (code, out) = env.cli(&[
+        "task",
+        "create",
+        "--title",
+        "带星级",
+        "--priority",
+        "4",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"]["priority"], 4);
+    assert_eq!(v["meta"]["schema_version"], "5");
+    let id = v["data"]["id"].as_str().unwrap().to_string();
+
+    // update --priority 2
+    let (code, out) = env.cli(&["task", "update", &id, "--priority", "2", "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"]["priority"], 2);
+
+    // 越界拒绝：exit code 2（参数错误）
+    let (code, _out) = env.cli(&["task", "update", &id, "--priority", "9", "--json"]);
+    assert_eq!(code, 2, "priority=9 应报参数错误");
+
+    // task list 按星级降序
+    env.cli(&[
+        "task",
+        "create",
+        "--title",
+        "高星",
+        "--priority",
+        "5",
+        "--json",
+    ]);
+    let (code, out) = env.cli(&["task", "list", "--json"]);
+    assert_eq!(code, 0);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let items = v["data"].as_array().unwrap();
+    assert_eq!(items[0]["priority"], 5);
+    assert_eq!(items[0]["title"], "高星");
+}
+
+#[test]
 fn chain_core_create_then_cli_read_json() {
     let env = Env::new();
     let task = env.core_create_task("GUI 建的任务");
@@ -103,7 +150,7 @@ fn chain_core_create_then_cli_read_json() {
     assert_eq!(code, 0);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], true);
-    assert_eq!(v["meta"]["schema_version"], "4");
+    assert_eq!(v["meta"]["schema_version"], "5");
     let items = v["data"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["id"], task.id.as_str());
@@ -244,7 +291,7 @@ fn ai_error_protocol_not_found_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "4");
+    assert_eq!(v["meta"]["schema_version"], "5");
 }
 
 #[test]
@@ -336,7 +383,7 @@ fn plugin_unknown_id_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "4");
+    assert_eq!(v["meta"]["schema_version"], "5");
 }
 
 /// T4：manifest 非法的目录在 list 中以 error 呈现，不影响整体。
@@ -420,7 +467,7 @@ fn chain_task_recurrence() {
     };
     let off_day = (wd % 7) + 1; // 必不等于今天
 
-    // 1) weekly 含今天：创建即 JSON 带 recurrence，schema_version=4，打卡成功
+    // 1) weekly 含今天：创建即 JSON 带 recurrence，schema_version=5，打卡成功
     let (code, out) = env.cli(&[
         "task",
         "create",
@@ -435,7 +482,7 @@ fn chain_task_recurrence() {
     assert_eq!(code, 0, "{out}");
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["data"]["recurrence"]["kind"], "weekly");
-    assert_eq!(v["meta"]["schema_version"], "4");
+    assert_eq!(v["meta"]["schema_version"], "5");
     let id_on = v["data"]["id"].as_str().unwrap().to_string();
     let (code, out) = env.cli(&["task", "checkin", &id_on, "--json"]);
     assert_eq!(code, 0, "{out}");

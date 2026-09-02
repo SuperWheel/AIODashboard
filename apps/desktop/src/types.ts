@@ -23,6 +23,10 @@ export interface Task {
   card_style: CardStyle;
   /** 当前生效循环规则（后端按当日目标区间回填；旧数据缺省视为 daily） */
   recurrence?: Recurrence;
+  /** 重要性星级 0–5（0=未评级；006 协议 v5） */
+  priority: number;
+  /** 手动排序分数索引（档内升序；006 协议 v5） */
+  sort_order: number;
   project_id?: string | null;
   created_at: string;
   updated_at: string;

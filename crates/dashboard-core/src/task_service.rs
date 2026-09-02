@@ -18,6 +18,8 @@ pub struct CreateTaskInput {
     pub card_style: CardStyle,
     /// 循环规则（默认每日）
     pub recurrence: Recurrence,
+    /// 重要性星级 0–5（0=未评级；006）
+    pub priority: i64,
     pub project_id: Option<String>,
     /// 创建时直接归入的重要日
     pub library_id: Option<String>,
@@ -33,6 +35,7 @@ impl Default for CreateTaskInput {
             daily_target: 1,
             card_style: CardStyle::Day,
             recurrence: Recurrence::Daily,
+            priority: 0,
             project_id: None,
             library_id: None,
         }
@@ -52,6 +55,8 @@ pub struct UpdateTaskInput {
     pub recurrence: Option<Recurrence>,
     /// Some(None) 表示移出项目
     pub project_id: Option<Option<String>>,
+    /// 重要性星级 0–5（006）
+    pub priority: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -93,6 +98,16 @@ fn validate_color(hex: &str) -> CoreResult<String> {
     Ok(h.to_string())
 }
 
+/// 星级合法域 0–5（0=未评级）。
+fn validate_priority(p: i64) -> CoreResult<i64> {
+    if !(0..=5).contains(&p) {
+        return Err(CoreError::Validation(format!(
+            "无效的星级 {p}（应为 0–5，0=未评级）"
+        )));
+    }
+    Ok(p)
+}
+
 fn ensure_project_exists(conn: &rusqlite::Connection, pid: &str) -> CoreResult<()> {
     if project_repo::get(conn, pid)?.is_none() {
         return Err(CoreError::NotFound(format!("project {pid}")));
@@ -108,6 +123,7 @@ pub fn create_task(
     let title = validate_title(&input.title)?;
     let target = validate_target(input.daily_target)?;
     let color = validate_color(&input.color_hex)?;
+    let priority = validate_priority(input.priority)?;
     if let Some(pid) = &input.project_id {
         ensure_project_exists(conn, pid)?;
     }
@@ -115,15 +131,23 @@ pub fn create_task(
         crate::library_service::get_library(conn, lid)?;
     }
     let today = local_today();
+    // 新任务落到其星级档末尾（sort_order = 档内 max + 1024；空档从 1024 起）
+    let sort_order = task_repo::max_sort_order_in_band(conn, priority)?
+        .map(|m| m + 1024.0)
+        .unwrap_or(1024.0);
 
     let task = task_repo::create(
         conn,
-        &title,
-        input.icon.trim(),
-        &color,
-        input.unit.trim(),
-        input.card_style,
-        input.project_id.as_deref(),
+        &task_repo::NewTask {
+            title,
+            icon: input.icon.trim().to_string(),
+            color_hex: color,
+            unit: input.unit.trim().to_string(),
+            card_style: input.card_style,
+            priority,
+            sort_order,
+            project_id: input.project_id.clone(),
+        },
     )?;
     // 开放活动区间 + 首个目标区间（今天起生效；循环锚点 = 今天）
     period_repo::insert_activity(conn, &task.id, &today, None)?;
@@ -261,6 +285,68 @@ pub fn restore_task(conn: &rusqlite::Connection, id: &str, actor: Actor) -> Core
     get_task(conn, id)
 }
 
+/// 拖拽落位（006）：同档内重排（new_priority=None）或跨档改级+落位。
+/// before_id/after_id = 全局序列中落点的上下邻居（sort_order 取其中点；
+/// 缺侧取 ±1024；均缺 = 目标档档末 max+1024）。
+pub fn move_task_position(
+    conn: &rusqlite::Connection,
+    id: &str,
+    new_priority: Option<i64>,
+    before_id: Option<&str>,
+    after_id: Option<&str>,
+    actor: Actor,
+) -> CoreResult<Task> {
+    let existing = get_task(conn, id)?;
+    let band = new_priority
+        .map(validate_priority)
+        .transpose()?
+        .unwrap_or(existing.priority);
+    if let Some(b) = before_id {
+        get_task(conn, b)?;
+    }
+    if let Some(a) = after_id {
+        get_task(conn, a)?;
+    }
+    let before_so = before_id
+        .map(|b| get_task(conn, b).map(|t| t.sort_order))
+        .transpose()?;
+    let after_so = after_id
+        .map(|a| get_task(conn, a).map(|t| t.sort_order))
+        .transpose()?;
+    let sort_order = match (before_so, after_so) {
+        (Some(b), Some(a)) => (b + a) / 2.0,
+        (Some(b), None) => b + 1024.0,
+        (None, Some(a)) => a - 1024.0,
+        (None, None) => task_repo::max_sort_order_in_band(conn, band)?
+            .map(|m| m + 1024.0)
+            .unwrap_or(1024.0),
+    };
+    task_repo::update(
+        conn,
+        id,
+        &task_repo::TaskPatch {
+            priority: Some(band),
+            sort_order: Some(sort_order),
+            ..Default::default()
+        },
+    )?;
+    log_activity(
+        conn,
+        chrono::Utc::now(),
+        actor,
+        "task.move",
+        "task",
+        Some(id),
+        &serde_json::json!({
+            "title": existing.title,
+            "priority": band,
+            "sort_order": sort_order,
+        }),
+    );
+    snapshot::refresh(conn);
+    get_task(conn, id)
+}
+
 pub fn update_task(
     conn: &rusqlite::Connection,
     id: &str,
@@ -290,6 +376,9 @@ pub fn update_task(
             ensure_project_exists(conn, p)?;
         }
         patch.project_id = Some(pid.clone());
+    }
+    if let Some(p) = input.priority {
+        patch.priority = Some(validate_priority(p)?);
     }
     task_repo::update(conn, id, &patch)?;
 

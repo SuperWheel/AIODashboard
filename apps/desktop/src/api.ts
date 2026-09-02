@@ -47,6 +47,8 @@ export interface CreateTaskParams {
   recurrence?: Recurrence;
   projectId?: string | null;
   libraryId?: string | null;
+  /** 重要性星级 0–5 */
+  priority?: number;
   actor?: string;
 }
 
@@ -58,7 +60,8 @@ export interface UpdateTaskParams {
   icon?: string;
   color?: string;
   cardStyle?: CardStyle;
-  recurrence?: Recurrence;
+  recurrence?: Recurrence;  /** 重要性星级 0–5 */
+  priority?: number;
   /** 显式 null = 移出项目；不传 = 不修改 */
   projectId?: string | null;
   actor?: string;
@@ -92,6 +95,7 @@ export const api = {
         color: params.color ?? null,
         cardStyle: params.cardStyle ?? null,
         ...recurrencePayload(params.recurrence),
+        priority: params.priority ?? null,
         projectId: params.projectId ?? null,
         libraryId: params.libraryId ?? null,
         actor: params.actor ?? null,
@@ -111,6 +115,7 @@ export const api = {
         color: params.color ?? null,
         cardStyle: params.cardStyle ?? null,
         ...recurrencePayload(params.recurrence),
+        priority: params.priority ?? null,
         projectId: params.projectId ?? null,
         // JSON null 无法区分"不变"与"清空"，后端靠这个标志判断移出项目
         clearProject: params.projectId === null,
@@ -178,6 +183,13 @@ export const api = {
     invoke<GlobalYearHeatmap>("global_year_heatmap", { anchor: anchor ?? null }),
   moveTaskLibrary: (id: string, libraryId: string | null) =>
     invoke<Task>("move_task_library", { id, libraryId }),
+  /** 拖拽落位：priority=null 同档内重排；传 0–5 跨档改级 */
+  moveTaskPosition: (
+    id: string,
+    priority: number | null,
+    beforeId: string | null,
+    afterId: string | null,
+  ) => invoke<Task>("move_task_position", { id, priority, beforeId, afterId }),
 
   // 带 actor 的写入（插件桥使用；审计 actor=plugin:<id>）
   createTaskAs: (actor: string, title: string, target?: number) =>

@@ -5,6 +5,23 @@
 
 ---
 
+## [2026-09-02] Spec 006：任务星级 + 自由拖拽排序
+
+**需求简述**：任务卡加星级系统（1–5，0=未评级），星级高排前；卡片可自由拖拽手动排序。用户拍板：星级分档优先，跨档拖动弹确认框改成目标档星级；编辑器 + ⋯ 菜单设星。
+
+**模式**：Spec（变更包 openspec/changes/006-task-priority-drag，四件套）
+
+**关键决策**：
+- **排序口径**：墙 = priority DESC → sort_order ASC → created_at ASC（core `sort_wall_views` 统一，含按日翻页）；与打卡状态解耦不变；新任务落档末（档内 max+1024）。
+- **分数索引**：`sort_order REAL`，落位取邻居中点，不整列重排；`task_repo::create` 参数膨胀触发 clippy，顺手重构为 `NewTask` 参数包。
+- **跨档拖拽**：`move_task_position(id, new_priority?, before_id?, after_id?)` 单用例改级+落位（activity log + snapshot）；GUI 在落点确定后判断目标档（下方卡片星级，墙尾取上方），同档直调、跨档先弹 confirmDialog（文案含源/目标星级）。
+- **协议 v5**：Task JSON 增 priority/sort_order，CLI `create/update --priority`（stdin JSON 也支持）；拖拽位置写为 GUI 专有。
+- **Today 页不受影响**（状态排序+会话快照）。
+
+**验证结果**：✅ check.sh 全绿（core 32 测含星级/落位/跨档、CLI 16 链路含 --priority 与越界 exit code 2、迁移 V5 断言）；GUI 走查待用户（拖动手感、插入指示线、跨档弹窗）。
+
+---
+
 ## [2026-09-02] 任务页切换器规格统一 + 归档页重构（A+B 方案）
 
 **需求简述**：任务页「进行中/已归档」「均衡混排/类型分区」选中色块与日期控件高度不一致，以日期色块为准统一；「已归档」标签去数字；归档页太简陋（任务多了找不到），选定 A+B 方案优化。

@@ -273,6 +273,28 @@ function StyleMenu({
           {task.card_style === s.key && <span>✓</span>}
         </button>
       ))}
+      <div className="my-1 border-t border-line" />
+      <div className="px-3 pb-0.5 pt-1 text-[10px] text-ink3">星级</div>
+      {[0, 1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          className={`flex w-full items-center justify-between px-3 py-1.5 text-xs transition-colors hover:bg-hover ${
+            task.priority === n ? "font-medium text-accent" : "text-ink2"
+          }`}
+          onClick={async () => {
+            onClose();
+            try {
+              await api.updateTask({ id: task.id, priority: n });
+              onChanged();
+            } catch (e) {
+              toastError(String(e));
+            }
+          }}
+        >
+          {n === 0 ? "无" : "★".repeat(n)}
+          {task.priority === n && <span>✓</span>}
+        </button>
+      ))}
     </div>
   );
 }
@@ -377,7 +399,14 @@ export default function TaskCard({
           onClick={() => onOpenDetail(task.id)}
           title="查看详情"
         >
-          <div className="truncate text-sm font-semibold text-ink">{task.title}</div>
+          <div className="flex items-center truncate text-sm font-semibold text-ink">
+            <span className="truncate">{task.title}</span>
+            {task.priority > 0 && (
+              <span className="ml-1.5 shrink-0 text-[10px]" style={{ color: "#F5B942" }}>
+                {"★".repeat(task.priority)}
+              </span>
+            )}
+          </div>
           <div className="mt-0.5 truncate text-xs text-ink3">
             {subtitleFor(view, ov, interactive ? "今日" : "当日")}
           </div>

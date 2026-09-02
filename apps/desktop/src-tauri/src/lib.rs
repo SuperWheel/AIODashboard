@@ -87,6 +87,7 @@ struct CreateTaskParams {
     weekdays: Option<Vec<u8>>,
     project_id: Option<String>,
     library_id: Option<String>,
+    priority: Option<i64>,
     actor: Option<String>,
 }
 
@@ -141,6 +142,9 @@ fn create_task(params: CreateTaskParams) -> R<Task> {
     if let Some(kind) = &params.recurrence {
         input.recurrence = parse_recurrence(kind, params.weekdays.clone())?;
     }
+    if let Some(p) = params.priority {
+        input.priority = p;
+    }
     core::task_service::create_task(&c, &input, actor_from(params.actor)).map_err(|e| e.to_string())
 }
 
@@ -159,6 +163,7 @@ struct UpdateTaskParams {
     clear_project: Option<bool>,
     recurrence: Option<String>,
     weekdays: Option<Vec<u8>>,
+    priority: Option<i64>,
     actor: Option<String>,
 }
 
@@ -190,9 +195,32 @@ fn update_task(params: UpdateTaskParams) -> R<Task> {
         card_style: style,
         recurrence,
         project_id,
+        priority: params.priority,
     };
     core::task_service::update_task(&c, &params.id, &input, actor_from(params.actor))
         .map_err(|e| e.to_string())
+}
+
+/// 拖拽落位（006）：同档内重排（priority=None）或跨档改级+落位。
+/// before_id/after_id = 全局序列中落点的上下邻居。
+#[tauri::command]
+fn move_task_position(
+    id: String,
+    priority: Option<i64>,
+    before_id: Option<String>,
+    after_id: Option<String>,
+    actor: Option<String>,
+) -> R<Task> {
+    let c = conn()?;
+    core::task_service::move_task_position(
+        &c,
+        &id,
+        priority,
+        before_id.as_deref(),
+        after_id.as_deref(),
+        actor_from(actor),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -663,6 +691,7 @@ pub fn run() {
             list_archived_tasks,
             create_task,
             update_task,
+            move_task_position,
             archive_task,
             restore_task,
             delete_task,

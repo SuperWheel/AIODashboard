@@ -13,10 +13,12 @@
 //! - "4"：年总览改滚动窗口（rolling-year-heatmap，变更包 005）——`task overview --period year`
 //!   与 library 热力图从日历年改为滚动 53 周（右端为本周），week_index 以窗口起点为第 0 列，
 //!   leading_empty_count 恒 0
+//! - "5"：任务星级+手动排序（task-priority-drag，变更包 006）——Task 增 priority/sort_order
+//!   字段，task create/update 增 --priority
 
 use serde::Serialize;
 
-pub const SCHEMA_VERSION: &str = "4";
+pub const SCHEMA_VERSION: &str = "5";
 
 /// 标准 Exit Code。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

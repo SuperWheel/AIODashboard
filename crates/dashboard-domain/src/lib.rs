@@ -242,6 +242,12 @@ pub struct Task {
     /// 当前生效循环规则（core 在读取时按当日目标区间回填；存储无此列）
     #[serde(default)]
     pub recurrence: Recurrence,
+    /// 重要性星级：0=未评级，1–5 星（006；协议 v5）
+    #[serde(default)]
+    pub priority: i64,
+    /// 手动排序分数索引：档内升序，新任务取档末 max+1024（006；协议 v5）
+    #[serde(default)]
+    pub sort_order: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
     pub created_at: DateTime<Utc>,

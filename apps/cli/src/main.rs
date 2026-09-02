@@ -129,6 +129,9 @@ enum TaskCmd {
         /// weekly 循环的星期（1=周一…7=周日，逗号分隔）
         #[arg(long, value_delimiter = ',')]
         weekdays: Option<Vec<u8>>,
+        /// 重要性星级（0–5，0=未评级）
+        #[arg(long)]
+        priority: Option<i64>,
         #[arg(long)]
         project: Option<String>,
         /// 创建时归入的重要日
@@ -159,6 +162,9 @@ enum TaskCmd {
         /// weekly 循环的星期（1=周一…7=周日，逗号分隔）
         #[arg(long, value_delimiter = ',')]
         weekdays: Option<Vec<u8>>,
+        /// 重要性星级（0–5，0=未评级）
+        #[arg(long)]
+        priority: Option<i64>,
         #[arg(long)]
         project: Option<String>,
         #[arg(long = "clear-project")]
@@ -712,6 +718,7 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
             card_style,
             recurrence,
             weekdays,
+            priority,
             project,
             library,
             stdin,
@@ -753,6 +760,9 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
                     .as_str()
                     .or(v["library_id"].as_str())
                     .map(|s| s.to_string());
+                if let Some(p) = v["priority"].as_i64() {
+                    input.priority = p;
+                }
             } else {
                 input.title = title.ok_or_else(|| {
                     CoreError::Validation("缺少 --title（或使用 --stdin 传入 JSON）".into())
@@ -770,6 +780,9 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
                 }
                 if let Some(kind) = &recurrence {
                     input.recurrence = parse_recurrence(kind, weekdays.clone())?;
+                }
+                if let Some(p) = priority {
+                    input.priority = p;
                 }
                 input.project_id = project;
                 input.library_id = library;
@@ -790,6 +803,7 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
             card_style,
             recurrence,
             weekdays,
+            priority,
             project,
             clear_project,
         } => {
@@ -821,6 +835,7 @@ fn task_cmd(cmd: TaskCmd) -> CoreResult<Out> {
                 } else {
                     project.map(Some)
                 },
+                priority,
             };
             let t = task_service::update_task(&conn, &tid, &input, actor())?;
             Ok(Out {

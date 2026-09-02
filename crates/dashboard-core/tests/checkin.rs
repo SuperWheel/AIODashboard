@@ -518,6 +518,107 @@ fn wall_views_on_past_and_future_day() {
     assert!(core::context_service::wall_task_views_on(&c, "not-a-day").is_err());
 }
 
+// ---------- 星级与手动排序（006） ----------
+
+#[test]
+fn priority_create_update_and_validation() {
+    let c = conn();
+    // 默认 0 星；新任务落到档末（1024 起递增）
+    let a = make_task(&c, 1);
+    assert_eq!(a.priority, 0);
+    assert!(a.sort_order >= 1024.0);
+    // 创建带星级
+    let b = core::task_service::create_task(
+        &c,
+        &core::task_service::CreateTaskInput {
+            title: "重要".into(),
+            priority: 5,
+            ..Default::default()
+        },
+        Actor::User,
+    )
+    .unwrap();
+    assert_eq!(b.priority, 5);
+    // 越界拒绝
+    assert!(core::task_service::create_task(
+        &c,
+        &core::task_service::CreateTaskInput {
+            title: "x".into(),
+            priority: 6,
+            ..Default::default()
+        },
+        Actor::User,
+    )
+    .is_err());
+    // 更新星级
+    let b = core::task_service::update_task(
+        &c,
+        &b.id,
+        &core::task_service::UpdateTaskInput {
+            priority: Some(3),
+            ..Default::default()
+        },
+        Actor::User,
+    )
+    .unwrap();
+    assert_eq!(b.priority, 3);
+    assert!(core::task_service::update_task(
+        &c,
+        &b.id,
+        &core::task_service::UpdateTaskInput {
+            priority: Some(7),
+            ..Default::default()
+        },
+        Actor::User,
+    )
+    .is_err());
+    // 同档新任务依次排档末
+    let c2 = make_task(&c, 1);
+    assert!(c2.sort_order > a.sort_order);
+}
+
+#[test]
+fn move_task_position_reorders_within_band() {
+    let c = conn();
+    let a = make_task(&c, 1);
+    let b = make_task(&c, 1);
+    let d = make_task(&c, 1);
+    // 初始 a < b < d（档内递增）；把 a 移到 b,d 之间
+    core::task_service::move_task_position(&c, &a.id, None, Some(&b.id), Some(&d.id), Actor::User)
+        .unwrap();
+    let views = core::context_service::wall_task_views(&c).unwrap();
+    let order: Vec<&str> = views.iter().map(|v| v.task.id.as_str()).collect();
+    assert_eq!(order, vec![b.id.as_str(), a.id.as_str(), d.id.as_str()]);
+}
+
+#[test]
+fn move_task_position_cross_band_updates_priority() {
+    let c = conn();
+    let hi = core::task_service::create_task(
+        &c,
+        &core::task_service::CreateTaskInput {
+            title: "高星".into(),
+            priority: 5,
+            ..Default::default()
+        },
+        Actor::User,
+    )
+    .unwrap();
+    let lo = make_task(&c, 1);
+    // lo 跨档移到 hi 前面 + 改 5 星 → 排最前
+    core::task_service::move_task_position(&c, &lo.id, Some(5), None, Some(&hi.id), Actor::User)
+        .unwrap();
+    assert_eq!(
+        core::task_service::get_task(&c, &lo.id).unwrap().priority,
+        5
+    );
+    let views = core::context_service::wall_task_views(&c).unwrap();
+    assert_eq!(views[0].task.id, lo.id);
+    assert_eq!(views[1].task.id, hi.id);
+    // 星级分档优先于 sort_order/created_at：0 星排在最后
+    assert_eq!(views.len(), 2);
+}
+
 // ---------- 归档列表（含归档日） ----------
 
 #[test]

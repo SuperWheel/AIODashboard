@@ -9,7 +9,7 @@ use rusqlite::{
 use crate::timeutil::{read_time, write_time};
 
 pub const TASK_COLS: &str =
-    "id, title, status, icon, color_hex, unit, card_style, project_id, created_at, updated_at";
+    "id, title, status, icon, color_hex, unit, card_style, priority, sort_order, project_id, created_at, updated_at";
 
 fn invalid(col: usize, what: &str, raw: &str) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(
@@ -34,9 +34,11 @@ fn map_task(row: &Row) -> rusqlite::Result<Task> {
             .ok_or_else(|| invalid(6, "card style", &card_raw))?,
         // 当日循环规则由 core 读侧回填（存储无此列）
         recurrence: Default::default(),
-        project_id: row.get(7)?,
-        created_at: read_time(row, 8)?,
-        updated_at: read_time(row, 9)?,
+        priority: row.get(7)?,
+        sort_order: row.get(8)?,
+        project_id: row.get(9)?,
+        created_at: read_time(row, 10)?,
+        updated_at: read_time(row, 11)?,
     })
 }
 
@@ -84,8 +86,8 @@ fn query_tasks(conn: &Connection, q: &TaskQuery) -> rusqlite::Result<Vec<Task>> 
 
 pub fn insert(conn: &Connection, task: &Task) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO tasks (id, title, status, icon, color_hex, unit, card_style, project_id, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO tasks (id, title, status, icon, color_hex, unit, card_style, priority, sort_order, project_id, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             task.id,
             task.title,
@@ -94,6 +96,8 @@ pub fn insert(conn: &Connection, task: &Task) -> rusqlite::Result<()> {
             task.color_hex,
             task.unit,
             task.card_style.as_str(),
+            task.priority,
+            task.sort_order,
             task.project_id,
             write_time(task.created_at),
             write_time(task.updated_at),
@@ -111,27 +115,34 @@ pub fn get(conn: &Connection, id: &str) -> rusqlite::Result<Option<Task>> {
     .optional()
 }
 
-/// 新建任务（内部构造完整实体；目标/活动区间由 core 用例负责）。
-pub fn create(
-    conn: &Connection,
-    title: &str,
-    icon: &str,
-    color_hex: &str,
-    unit: &str,
-    card_style: CardStyle,
-    project_id: Option<&str>,
-) -> rusqlite::Result<Task> {
+/// 新建任务参数包（避免函数参数膨胀；目标/活动区间由 core 用例负责）。
+#[derive(Debug, Default)]
+pub struct NewTask {
+    pub title: String,
+    pub icon: String,
+    pub color_hex: String,
+    pub unit: String,
+    pub card_style: CardStyle,
+    pub priority: i64,
+    pub sort_order: f64,
+    pub project_id: Option<String>,
+}
+
+/// 新建任务（内部构造完整实体）。
+pub fn create(conn: &Connection, input: &NewTask) -> rusqlite::Result<Task> {
     let now = Utc::now();
     let task = Task {
         id: new_id(id_prefix::TASK),
-        title: title.to_string(),
+        title: input.title.clone(),
         status: TaskStatus::Active,
-        icon: icon.to_string(),
-        color_hex: color_hex.to_string(),
-        unit: unit.to_string(),
-        card_style,
+        icon: input.icon.clone(),
+        color_hex: input.color_hex.clone(),
+        unit: input.unit.clone(),
+        card_style: input.card_style,
         recurrence: Default::default(),
-        project_id: project_id.map(|s| s.to_string()),
+        priority: input.priority,
+        sort_order: input.sort_order,
+        project_id: input.project_id.clone(),
         created_at: now,
         updated_at: now,
     };
@@ -148,6 +159,8 @@ pub struct TaskPatch {
     pub color_hex: Option<String>,
     pub unit: Option<String>,
     pub card_style: Option<CardStyle>,
+    pub priority: Option<i64>,
+    pub sort_order: Option<f64>,
     pub project_id: Option<Option<String>>, // Some(None) = 清除
 }
 
@@ -180,6 +193,14 @@ pub fn update(conn: &Connection, id: &str, patch: &TaskPatch) -> rusqlite::Resul
     if let Some(style) = patch.card_style {
         set_text!("card_style", style.as_str());
     }
+    if let Some(priority) = patch.priority {
+        args.push(SqlValue::Integer(priority));
+        sets.push(format!("priority = ?{}", args.len()));
+    }
+    if let Some(so) = patch.sort_order {
+        args.push(SqlValue::Real(so));
+        sets.push(format!("sort_order = ?{}", args.len()));
+    }
     if let Some(pid) = &patch.project_id {
         match pid {
             Some(p) => set_text!("project_id", p),
@@ -202,6 +223,15 @@ pub fn update(conn: &Connection, id: &str, patch: &TaskPatch) -> rusqlite::Resul
 
 pub fn delete(conn: &Connection, id: &str) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM tasks WHERE id = ?1", params![id])
+}
+
+/// 某星级档内当前最大 sort_order（无 = None；新任务取 max+1024 落档末）。
+pub fn max_sort_order_in_band(conn: &Connection, priority: i64) -> rusqlite::Result<Option<f64>> {
+    conn.query_row(
+        "SELECT MAX(sort_order) FROM tasks WHERE status = 'active' AND priority = ?1",
+        params![priority],
+        |r| r.get(0),
+    )
 }
 
 pub fn count_active(conn: &Connection) -> rusqlite::Result<i64> {
