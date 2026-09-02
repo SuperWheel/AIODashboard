@@ -53,6 +53,11 @@ export function Button({
 export const inputCls =
   "h-9 w-full rounded-lg border border-line bg-surface2 px-2.5 text-sm outline-none transition-colors focus:border-accent/50 disabled:opacity-50";
 
+/** 工具栏紧凑输入框：h-7（28px），与分段控件（bg-hover p-0.5 + h-6 内块）等高。
+ *  规则：表单控件（编辑器/弹窗）一律 inputCls(h-9)；工具栏控件一律 inputClsSm(h-7)。 */
+export const inputClsSm =
+  "h-7 w-full rounded-lg border border-line bg-surface2 px-2.5 text-sm outline-none transition-colors focus:border-accent/50 disabled:opacity-50";
+
 /** 下拉选择：与输入框同高同底（h-9），右侧自带 ▾（native 箭头隐藏）。 */
 export function FieldSelect({
   value,
@@ -153,10 +158,15 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 export function DatePickerPanel({
   value,
   onSelect,
+  marks,
+  markColor = "var(--accent)",
 }: {
   /** YYYY-MM-DD */
   value: string;
   onSelect: (day: string) => void;
+  /** 日 → 数量：在该日格子底部渲染色块，颜色深度随数量（相对当月最大计数） */
+  marks?: Record<string, number>;
+  markColor?: string;
 }) {
   const today = localToday();
   const parse = (s: string) => {
@@ -192,6 +202,8 @@ export function DatePickerPanel({
   const cell =
     "flex items-center justify-center rounded-lg text-xs transition-colors";
 
+  const maxMark = Math.max(1, ...Object.values(marks ?? {}));
+
   const dayGrid = () => {
     const leading = (new Date(vy, vm, 1).getDay() + 6) % 7; // 周一在前
     const count = new Date(vy, vm + 1, 0).getDate();
@@ -204,16 +216,19 @@ export function DatePickerPanel({
             {w}
           </div>
         ))}
-        {cells.map((day, i) =>
-          day === null ? (
-            <div key={`e${i}`} />
-          ) : (
+        {cells.map((day, i) => {
+          if (day === null) return <div key={`e${i}`} />;
+          const selected = day === value;
+          const mark = marks?.[day] ?? 0;
+          // 色块颜色深度：按当日数量相对最大计数 30% → 100%
+          const depth = mark > 0 ? 0.3 + 0.7 * (mark / maxMark) : 0;
+          return (
             <button
               key={day}
               type="button"
               onClick={() => onSelect(day)}
-              className={`${cell} h-8 tabular-nums ${
-                day === value
+              className={`${cell} relative h-8 tabular-nums ${
+                selected
                   ? "bg-accent font-medium text-onaccent"
                   : day === today
                     ? "font-semibold text-accent hover:bg-hover"
@@ -221,9 +236,19 @@ export function DatePickerPanel({
               }`}
             >
               {Number(day.slice(8))}
+              {mark > 0 && (
+                <span
+                  className="absolute bottom-1 left-1/2 h-1 w-3 -translate-x-1/2 rounded-full"
+                  style={{
+                    background: selected
+                      ? "color-mix(in srgb, var(--on-accent) 85%, transparent)"
+                      : `color-mix(in srgb, ${markColor} ${Math.round(depth * 100)}%, transparent)`,
+                  }}
+                />
+              )}
             </button>
-          ),
-        )}
+          );
+        })}
       </div>
     );
   };

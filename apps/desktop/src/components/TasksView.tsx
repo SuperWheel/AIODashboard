@@ -5,7 +5,7 @@ import type { ArchivedTask, CardStyle, Task, TaskDayView } from "../types";
 import TaskCard from "./TaskCard";
 import TaskDetailView from "./TaskDetailView";
 import TaskEditor from "./TaskEditor";
-import { Button, DatePickerPanel, Empty, inputCls, PageHeader } from "./ui";
+import { Button, DatePickerPanel, Empty, inputClsSm, PageHeader } from "./ui";
 import { toastError } from "./DialogHost";
 import { taskColor } from "../taskVisual";
 
@@ -170,6 +170,20 @@ export default function TasksView({
   // 归档页：搜索 + 排序（归档时间/名称/创建时间）
   const [archQuery, setArchQuery] = useState("");
   const [archSort, setArchSort] = useState<"archived" | "name" | "created">("archived");
+  // 归档页：指定日期筛选（null = 全部）
+  const [archDay, setArchDay] = useState<string | null>(null);
+  const [archDayOpen, setArchDayOpen] = useState(false);
+  const archDayRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!archDayOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (archDayRef.current && !archDayRef.current.contains(e.target as Node)) {
+        setArchDayOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [archDayOpen]);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   // 日期翻页：任务墙查看的逻辑日（默认今天；过去日只读回看）
@@ -244,10 +258,23 @@ export default function TasksView({
     setEditorOpen(true);
   };
 
+  // 归档页派生：各归档日的任务数（日期面板色块标记用）
+  const archDayCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const t of archived) {
+      if (t.archived_day) m[t.archived_day] = (m[t.archived_day] ?? 0) + 1;
+    }
+    return m;
+  }, [archived]);
+
   // 归档页派生：过滤 + 排序 + 按归档月份分组（排序=归档时间时）
   const archShown = useMemo(() => {
     const q = archQuery.trim().toLowerCase();
-    const list = archived.filter((t) => !q || t.title.toLowerCase().includes(q));
+    const list = archived.filter(
+      (t) =>
+        (!q || t.title.toLowerCase().includes(q)) &&
+        (!archDay || t.archived_day === archDay),
+    );
     if (archSort === "name") {
       return [...list].sort((a, b) => a.title.localeCompare(b.title, "zh"));
     }
@@ -259,7 +286,7 @@ export default function TasksView({
         (b.archived_day ?? "").localeCompare(a.archived_day ?? "") ||
         b.created_at.localeCompare(a.created_at),
     );
-  }, [archived, archQuery, archSort]);
+  }, [archived, archQuery, archSort, archDay]);
 
   const archGroups = useMemo(() => {
     if (archSort !== "archived") return null;
@@ -448,7 +475,7 @@ export default function TasksView({
                   value={archQuery}
                   onChange={(e) => setArchQuery(e.target.value)}
                   placeholder="搜索归档任务…"
-                  className={`${inputCls} max-w-56`}
+                  className={`${inputClsSm} max-w-56`}
                 />
                 <div className="flex items-center rounded-lg bg-hover p-0.5">
                   {(
@@ -471,11 +498,52 @@ export default function TasksView({
                     </button>
                   ))}
                 </div>
+                {/* 指定日期筛选：弹分层面板，有任务的日子底部带色块（深度随数量） */}
+                <div className="relative" ref={archDayRef}>
+                  <button
+                    onClick={() => setArchDayOpen((v) => !v)}
+                    className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors ${
+                      archDay
+                        ? "border-accent/40 bg-accent/10 font-medium text-accent"
+                        : "border-line bg-surface2 text-ink2 hover:bg-hover hover:text-ink"
+                    }`}
+                    title={archDay ? "点击更换日期" : "按归档日期筛选"}
+                  >
+                    📅 <span className="tabular-nums">{archDay ?? "指定日期"}</span>
+                  </button>
+                  {archDayOpen && (
+                    <div className="absolute left-0 top-8 z-30">
+                      <DatePickerPanel
+                        value={archDay ?? ""}
+                        marks={archDayCounts}
+                        onSelect={(d) => {
+                          setArchDay(d);
+                          setArchDayOpen(false);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+                {archDay && (
+                  <button
+                    className="rounded-lg px-2 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
+                    onClick={() => setArchDay(null)}
+                  >
+                    清除
+                  </button>
+                )}
               </div>
 
               {archShown.length === 0 ? (
                 <div className="mt-4">
-                  <Empty text={`没有匹配「${archQuery}」的归档任务`} glyph="🔍" />
+                  <Empty
+                    text={
+                      archDay
+                        ? `${archDay} 没有归档的任务`
+                        : `没有匹配「${archQuery}」的归档任务`
+                    }
+                    glyph="🔍"
+                  />
                 </div>
               ) : archGroups ? (
                 archGroups.map(([month, items]) => (
