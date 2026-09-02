@@ -163,7 +163,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 5);
+        assert_eq!(v, 6);
 
         // 旧数据完整
         let old = crate::task_repo::get(&conn, "tsk_old").unwrap();

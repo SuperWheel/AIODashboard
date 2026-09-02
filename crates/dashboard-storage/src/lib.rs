@@ -79,6 +79,11 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         // V5：任务增星级与手动排序列（006）。同样加列与版本号同事务。
         conn.execute_batch(SCHEMA_V5)?;
     }
+    if version < 6 {
+        // V6：V5 迁移把存量任务 sort_order 全置 0，导致落位中点塌缩、
+        // 拖拽看似无效。按星级档内 created_at 顺序补齐为 1024 步进。
+        conn.execute_batch(SCHEMA_V6)?;
+    }
     Ok(())
 }
 
@@ -87,6 +92,23 @@ const SCHEMA_V4: &str = r#"
 BEGIN;
 ALTER TABLE task_target_periods ADD COLUMN recurrence TEXT;
 PRAGMA user_version = 4;
+COMMIT;
+"#;
+
+/// V6 数据回填：存量任务 sort_order 全 0 → 档内按 created_at（id 决胜）重排为
+/// 1024 步进。只重排启用中任务不够——归档任务也一并编号，避免恢复后撞值。
+const SCHEMA_V6: &str = r#"
+BEGIN;
+WITH ranked AS (
+  SELECT id, ROW_NUMBER() OVER (
+    PARTITION BY priority ORDER BY created_at ASC, id ASC
+  ) AS rn
+  FROM tasks
+)
+UPDATE tasks SET sort_order = (
+  SELECT rn * 1024.0 FROM ranked WHERE ranked.id = tasks.id
+);
+PRAGMA user_version = 6;
 COMMIT;
 "#;
 
@@ -295,3 +317,54 @@ INSERT INTO task_activity_periods (id, task_id, start_day, end_day)
 
 COMMIT;
 "#;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn migration_v6_backfills_sort_order_per_band() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        // 手工搭 V4 形态的 tasks 表（无 priority/sort_order 两列）
+        conn.execute_batch(
+            "CREATE TABLE tasks (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                icon TEXT NOT NULL DEFAULT '',
+                color_hex TEXT NOT NULL DEFAULT '#4A90E2',
+                unit TEXT NOT NULL DEFAULT '',
+                card_style TEXT NOT NULL DEFAULT 'day',
+                project_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO tasks VALUES
+                ('tsk_a','A','active','','#4A90E2','','day',NULL,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z'),
+                ('tsk_b','B','active','','#4A90E2','','day',NULL,'2026-08-02T00:00:00Z','2026-08-02T00:00:00Z'),
+                ('tsk_c','C','active','','#4A90E2','','day',NULL,'2026-08-03T00:00:00Z','2026-08-03T00:00:00Z');
+            PRAGMA user_version = 4;",
+        )
+        .unwrap();
+        crate::migrate(&conn).unwrap();
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 6);
+        // 回填后：同档内按 created_at 递增、1024 步进、互不相同
+        let mut stmt = conn
+            .prepare("SELECT id, sort_order FROM tasks ORDER BY sort_order ASC")
+            .unwrap();
+        let rows: Vec<(String, f64)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("tsk_a".to_string(), 1024.0),
+                ("tsk_b".to_string(), 2048.0),
+                ("tsk_c".to_string(), 3072.0),
+            ]
+        );
+    }
+}
