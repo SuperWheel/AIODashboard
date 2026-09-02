@@ -27,6 +27,7 @@
 ## 边界与已知取舍
 
 - 归档后的一次性任务被 undo：补偿写入原日账本，任务维持归档；恢复后当日计数恢复显示（账本为准）。
+- **（2026-09-02 修订，见 docs/plans/2026-09-02-once-task-linger-history.md）** 「完成即归档」保留，但可见性改为区间驱动：`build_day_view_on` 适用性不再看 `task.status`，改由活动区间覆盖（关闭日达标也算适用）决定；Today/任务墙候选集 = 活动区间覆盖当日的全部任务（含已归档）。效果：完成当天留痕、历史翻页可回看、当天 undo 自动解除归档（`unarchive_if_archived_today` 重开区间，不留零长度区间）。
 - weekly weekdays 允许空集（=锚点星期），编辑器不会产生空集（始终至少勾选一个）。
 - `library_tasks` 计数（CLI `library show`）不按当日适用过滤——与现状一致，另行治理（004 不扩scope）。
 - 插件 bridge `createTask` 不暴露 recurrence（默认 daily），PLUGIN_API.md 加"后续扩展"注记。
