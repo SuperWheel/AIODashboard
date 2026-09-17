@@ -1,0 +1,16 @@
+{
+  "id": "com.leeyl.job-tracker-trial",
+  "name": "求职台·试用",
+  "version": "0.1.0",
+  "api_version": "plugin.protocol/v2",
+  "min_host_version": "0.1.0",
+  "entry": "main.js",
+  "description": "界面试用：右键编辑、全高详情与今天求职卡片。使用演示数据，重载后重置，不保存真实求职记录或创建真实任务。",
+  "permissions": {
+    "ui": ["view", "today_card"]
+  },
+  "contributions": {
+    "views": [{ "id": "view", "title": "求职台·试用" }],
+    "today_cards": [{ "id": "card" }]
+  }
+}

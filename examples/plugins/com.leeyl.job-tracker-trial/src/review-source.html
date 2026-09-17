@@ -1,0 +1,706 @@
+<style>
+
+  #job-tracker-trial {
+    --jt-bg: light-dark(#f7f6f2, #0b0d12);
+    --jt-surface: light-dark(#ffffff, #14171f);
+    --jt-muted-surface: light-dark(#f0efea, #1b1f2a);
+    --jt-ink: light-dark(#1b1d23, #e8eaf0);
+    --jt-secondary: light-dark(#626773, #a0a8ba);
+    --jt-line: light-dark(#e8e8e2, #2a303d);
+    --jt-accent: light-dark(#047857, #34d399);
+    --jt-onaccent: light-dark(#ffffff, #07110d);
+    --jt-soft: light-dark(#eaf5ef, #153029);
+    --jt-blue: light-dark(#0369a1, #7dd3fc);
+    --jt-blue-soft: light-dark(#eaf4fb, #173044);
+    --jt-violet: light-dark(#7353af, #c4b5fd);
+    --jt-violet-soft: light-dark(#f2edf9, #2c2240);
+    --jt-amber: light-dark(#a45b13, #fbbf24);
+    --jt-amber-soft: light-dark(#fff5e6, #362918);
+    --jt-red: light-dark(#be4252, #fda4af);
+    --jt-red-soft: light-dark(#fceef0, #392028);
+    --jt-shade: light-dark(rgb(30 34 28 / 15%), rgb(0 0 0 / 42%));
+    --jt-row: 68px;
+    font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--jt-ink);
+    width: 100%;
+    text-align: left;
+    position: relative;
+  }
+  #job-tracker-trial * { box-sizing: border-box; }
+  #job-tracker-trial [hidden] { display: none !important; }
+  #job-tracker-trial button, #job-tracker-trial input, #job-tracker-trial select, #job-tracker-trial textarea { font: inherit; color: inherit; }
+  #job-tracker-trial button { cursor: pointer; }
+  #job-tracker-trial button:disabled { cursor: default; opacity: .6; }
+  #job-tracker-trial svg, #job-tracker-trial [data-lucide] { width: 16px; height: 16px; flex-shrink: 0; }
+  #job-tracker-trial .jt-shell { display: grid; grid-template-columns: 208px minmax(0,1fr); background: var(--jt-bg); border: 1px solid var(--jt-line); border-radius: 14px; overflow: hidden; height: 820px; }
+  #job-tracker-trial .jt-sidebar { background: var(--jt-muted-surface); border-right: 1px solid var(--jt-line); padding: 26px 12px 16px; display: flex; flex-direction: column; gap: 20px; }
+  #job-tracker-trial .jt-brand { font-size: 16px; font-weight: 500; letter-spacing: -.4px; padding: 0 10px; }
+  #job-tracker-trial .jt-brand small { display: block; font-size: 11px; font-weight: 400; color: var(--jt-secondary); letter-spacing: 0; margin-top: 4px; }
+  #job-tracker-trial .jt-nav { display: flex; flex-direction: column; gap: 5px; }
+  #job-tracker-trial .jt-nav-item { padding: 9px 12px; display: flex; align-items: center; gap: 10px; color: var(--jt-secondary); border-radius: 8px; }
+  #job-tracker-trial .jt-nav-item.jt-active { color: var(--jt-accent); background: var(--jt-soft); font-weight: 500; }
+  #job-tracker-trial button.jt-nav-item { width:100%; border:0; background:transparent; text-align:left; font:inherit; }
+  #job-tracker-trial button.jt-nav-item:hover { background:var(--jt-surface); }
+  #job-tracker-trial button.jt-nav-item.jt-active { background:var(--jt-soft); }
+  #job-tracker-trial .jt-nav-divider { height: 1px; background: var(--jt-line); margin: 10px 12px; }
+  #job-tracker-trial .jt-sidebar-bottom { margin-top: auto; padding: 0 8px; display: flex; flex-direction: column; gap: 12px; }
+  #job-tracker-trial .jt-user { display: flex; align-items: center; gap: 9px; padding-top: 12px; border-top: 1px solid var(--jt-line); }
+  #job-tracker-trial .jt-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--jt-surface); display: grid; place-items: center; font-size: 12px; }
+  #job-tracker-trial .jt-main { position: relative; padding: 24px 28px; min-width: 0; min-height:0; overflow-y:auto; }
+  #job-tracker-trial .jt-topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--jt-secondary); font-size: 11px; margin-bottom: 22px; }
+  #job-tracker-trial .jt-topline span { display: inline-flex; align-items: center; gap: 6px; }
+  #job-tracker-trial .jt-demo { border: 1px solid var(--jt-line); border-radius: 5px; padding: 3px 7px; background: var(--jt-surface); }
+  #job-tracker-trial .jt-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
+  #job-tracker-trial h2 { margin: 0; font-size: 25px; font-weight: 500; letter-spacing: -1px; line-height: 1.35; }
+  #job-tracker-trial .jt-subtitle { color: var(--jt-secondary); margin-top: 7px; font-size: 12px; }
+  #job-tracker-trial .jt-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 12px; background: var(--jt-surface); border: 1px solid var(--jt-line); border-radius: 7px; white-space: nowrap; min-height: 34px; }
+  #job-tracker-trial .jt-button:hover { background: var(--jt-muted-surface); }
+  #job-tracker-trial .jt-primary { background: var(--jt-accent); color: var(--jt-onaccent); border-color: var(--jt-accent); }
+  #job-tracker-trial .jt-primary:hover { background: var(--jt-accent); filter: brightness(1.07); }
+  #job-tracker-trial .jt-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); border: 1px solid var(--jt-line); border-radius: 10px; background: var(--jt-surface); padding: 17px 0; margin-bottom: 27px; }
+  #job-tracker-trial .jt-stat { padding: 0 18px; border-right: 1px solid var(--jt-line); }
+  #job-tracker-trial .jt-stat:last-child { border-right: 0; }
+  #job-tracker-trial .jt-stat-label { font-size: 11px; color: var(--jt-secondary); display: flex; align-items: center; gap: 6px; }
+  #job-tracker-trial .jt-stat-number { font-size: 26px; font-weight: 500; line-height: 1.3; margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
+  #job-tracker-trial .jt-stat small { font-size: 11px; color: var(--jt-secondary); }
+  #job-tracker-trial .jt-stat:last-child .jt-stat-number { color: var(--jt-accent); }
+  #job-tracker-trial .jt-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 13px; }
+  #job-tracker-trial .jt-filters { display: flex; gap: 2px; }
+  #job-tracker-trial .jt-filter { display: inline-flex; gap: 6px; align-items: center; border: 0; background: transparent; color: var(--jt-secondary); padding: 7px 9px; border-radius: 6px; font-size: 12px; }
+  #job-tracker-trial .jt-filter[aria-pressed="true"] { color: var(--jt-ink); background: var(--jt-surface); box-shadow: 0 1px 3px var(--jt-shade); }
+  #job-tracker-trial .jt-count { color: var(--jt-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+  #job-tracker-trial .jt-search { display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid var(--jt-line); border-radius: 7px; background: var(--jt-surface); color: var(--jt-secondary); max-width: 200px; }
+  #job-tracker-trial .jt-search input { padding: 0; border: 0; border-radius: 0; width: 138px; min-width: 0; background: transparent; font-size: 12px; box-shadow: none; }
+  #job-tracker-trial input::placeholder { color: var(--jt-secondary); opacity: 1; }
+  #job-tracker-trial .jt-table-wrap { overflow-x: auto; border: 1px solid var(--jt-line); border-radius: 9px; background: var(--jt-surface); }
+  #job-tracker-trial table { width: 100%; min-width: 730px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 12px; margin: 0; }
+  #job-tracker-trial th { padding: 11px 9px; background: var(--jt-muted-surface); text-align: left; color: var(--jt-secondary); font-weight: 400; font-size: 11px; white-space: nowrap; border-bottom: 1px solid var(--jt-line); }
+  #job-tracker-trial td { height: var(--jt-row); padding: 9px; border-bottom: 1px solid var(--jt-line); vertical-align: middle; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  #job-tracker-trial tbody tr:last-child td { border-bottom: 0; }
+  #job-tracker-trial th:first-child, #job-tracker-trial td:first-child { position: sticky; left: 0; z-index: 1; background: var(--jt-surface); padding-left: 13px; }
+  #job-tracker-trial th:first-child { background: var(--jt-muted-surface); z-index: 2; }
+  #job-tracker-trial tr:hover td { background: var(--jt-bg); }
+  #job-tracker-trial tr[data-row-id] { cursor:pointer; }
+  #job-tracker-trial .jt-company-link { flex:1; min-width:0; }
+  #job-tracker-trial .jt-company-link .jt-small { display:block; font-weight:400; }
+  #job-tracker-trial .jt-row-edit { flex-shrink:0; font-size:11px; }
+  #job-tracker-trial .jt-schedule-button { display:block; width:100%; text-align:left; border:0; background:transparent; padding:4px 0; border-radius:4px; }
+  #job-tracker-trial .jt-schedule-button:hover { color:var(--jt-accent); }
+  #job-tracker-trial .jt-company { display: flex; align-items: center; gap: 9px; }
+  #job-tracker-trial .jt-company-mark { width: 31px; height: 34px; flex-shrink: 0; border: 1px solid var(--jt-line); background: var(--jt-muted-surface); border-radius: 7px; display: grid; place-items: center; font-size: 14px; color: var(--jt-secondary); }
+  #job-tracker-trial .jt-company-link { display: block; text-align: left; padding: 0; border: 0; border-radius: 0; background: transparent; font-weight: 500; line-height: 1.5; font-size: 13px; }
+  #job-tracker-trial .jt-company-link:hover { color: var(--jt-accent); }
+  #job-tracker-trial .jt-small { color: var(--jt-secondary); font-size: 11px; margin-top: 3px; line-height: 1.45; }
+  #job-tracker-trial .jt-applied { display: flex; align-items: center; gap: 4px; }
+  #job-tracker-trial .jt-applied svg { width: 12px; height: 12px; color: var(--jt-accent); }
+  #job-tracker-trial .jt-stage { max-width: 100%; padding: 4px 3px 4px 7px; border-radius: 5px; border: 0; min-height: 28px; font-size: 11px; font-weight: 400; cursor: pointer; }
+  #job-tracker-trial .jt-stage.saved { color: var(--jt-secondary); background: var(--jt-muted-surface); }
+  #job-tracker-trial .jt-stage.applied { color: var(--jt-blue); background: var(--jt-blue-soft); }
+  #job-tracker-trial .jt-stage.assessment, #job-tracker-trial .jt-stage.interview { color: var(--jt-violet); background: var(--jt-violet-soft); }
+  #job-tracker-trial .jt-stage.offer, #job-tracker-trial .jt-stage.joined { color: var(--jt-accent); background: var(--jt-soft); }
+  #job-tracker-trial .jt-stage.rejected { color: var(--jt-red); background: var(--jt-red-soft); }
+  #job-tracker-trial .jt-stage.withdrawn, #job-tracker-trial .jt-stage.closed { color: var(--jt-secondary); background: var(--jt-muted-surface); }
+  #job-tracker-trial .jt-confirmed { color: var(--jt-accent); }
+  #job-tracker-trial .jt-estimated { color: var(--jt-amber); }
+  #job-tracker-trial .jt-table-bottom { display: flex; align-items: center; justify-content: space-between; color: var(--jt-secondary); font-size: 11px; padding: 13px 2px 0; gap: 15px; }
+  #job-tracker-trial .jt-empty { padding: 38px 15px; text-align: center; color: var(--jt-secondary); }
+  #job-tracker-trial .jt-overlay { position: absolute; inset: 0; z-index: 10; display: flex; justify-content: flex-end; overflow:hidden; border-radius:14px; }
+  #job-tracker-trial .jt-scrim { position: absolute; inset: 0; background: var(--jt-shade); }
+  #job-tracker-trial .jt-drawer { position: relative; background: var(--jt-surface); width: min(425px, 100%); border-left: 1px solid var(--jt-line); display: flex; flex-direction: column; box-shadow: -12px 0 38px var(--jt-shade); min-width: 0; }
+  #job-tracker-trial .jt-drawer-head { padding: 18px 21px 14px; border-bottom: 1px solid var(--jt-line); }
+  #job-tracker-trial .jt-drawer-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; color: var(--jt-secondary); font-size: 11px; }
+  #job-tracker-trial .jt-close { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; background: var(--jt-muted-surface); border: 0; border-radius: 6px; }
+  #job-tracker-trial h3 { margin: 0 0 4px; font-size: 19px; font-weight: 500; }
+  #job-tracker-trial .jt-drawer-tabs { display: flex; gap: 18px; margin-top: 16px; }
+  #job-tracker-trial .jt-drawer-tabs button { padding: 6px 0 9px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--jt-secondary); font-size: 12px; }
+  #job-tracker-trial .jt-drawer-tabs button[aria-pressed="true"] { color: var(--jt-accent); border-bottom-color: var(--jt-accent); }
+  #job-tracker-trial .jt-drawer-content { overflow-y: auto; padding: 20px 21px; flex: 1; }
+  #job-tracker-trial .jt-drawer { width:min(480px,100%); align-self:stretch; height:100%; min-height:0; }
+  #job-tracker-trial .jt-drawer-content { min-height:0; }
+  #job-tracker-trial .jt-next-interview { background: var(--jt-soft); border-radius: 9px; padding: 15px; margin-bottom: 22px; }
+  #job-tracker-trial .jt-next-label { color: var(--jt-accent); display: flex; align-items: center; gap: 7px; font-size: 11px; }
+  #job-tracker-trial .jt-next-time { margin: 8px 0 4px; font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  #job-tracker-trial .jt-section-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; font-weight: 500; }
+  #job-tracker-trial .jt-text-button { color: var(--jt-accent); background: transparent; padding: 2px; border: 0; font-size: 12px; }
+  #job-tracker-trial .jt-facts { display: grid; grid-template-columns: 90px minmax(0,1fr); gap: 12px 10px; font-size: 12px; margin: 0 0 22px; }
+  #job-tracker-trial .jt-facts dt { color: var(--jt-secondary); }
+  #job-tracker-trial .jt-facts dd { margin: 0; overflow-wrap: anywhere; }
+  #job-tracker-trial .jt-section { border-top: 1px solid var(--jt-line); padding-top: 17px; margin-top: 20px; }
+  #job-tracker-trial .jt-note { font-size: 12px; line-height: 1.85; color: var(--jt-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
+  #job-tracker-trial .jt-meeting { border-left: 2px solid var(--jt-line); padding: 0 0 22px 15px; margin: 0 0 0 3px; }
+  #job-tracker-trial .jt-meeting:last-child { padding-bottom: 0; }
+  #job-tracker-trial .jt-meeting strong { font-size: 13px; font-weight: 500; }
+  #job-tracker-trial .jt-history { margin: 0; padding-left: 18px; }
+  #job-tracker-trial .jt-history li { padding: 0 0 20px 5px; font-size: 12px; }
+  #job-tracker-trial .jt-form { display: grid; gap: 13px; }
+  #job-tracker-trial .jt-form label { display: grid; gap: 6px; font-size: 12px; color: var(--jt-secondary); }
+  #job-tracker-trial .jt-form input, #job-tracker-trial .jt-form select, #job-tracker-trial .jt-form textarea { display: block; width: 100%; border: 1px solid var(--jt-line); border-radius: 6px; padding: 8px 9px; background: var(--jt-surface); color: var(--jt-ink); min-width: 0; box-shadow: none; }
+  #job-tracker-trial .jt-form textarea { resize: vertical; min-height: 66px; }
+  #job-tracker-trial .jt-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  #job-tracker-trial .jt-form-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 9px; }
+  #job-tracker-trial .jt-drawer-head,#job-tracker-trial .jt-drawer-footer,#job-tracker-trial .jt-confirm { flex-shrink:0; }
+  #job-tracker-trial .jt-drawer-footer { background:var(--jt-surface); border-top:1px solid var(--jt-line); padding:14px 21px; }
+  #job-tracker-trial .jt-drawer-footer .jt-form-actions { padding:0; }
+  #job-tracker-trial .jt-form label.jt-check { display:flex; align-items:flex-start; gap:8px; }
+  #job-tracker-trial .jt-check input { width:16px; min-width:16px; height:16px; margin-top:2px; accent-color:var(--jt-accent); }
+  #job-tracker-trial .jt-meeting-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  #job-tracker-trial .jt-confirm { padding:14px 20px; border-top:1px solid var(--jt-line); background:var(--jt-amber-soft); }
+  #job-tracker-trial .jt-confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:9px; }
+  #job-tracker-trial .jt-today-grid { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(230px,1fr); gap:18px; align-items:start; }
+  #job-tracker-trial .jt-panel { background:var(--jt-surface); border:1px solid var(--jt-line); border-radius:11px; min-width:0; }
+  #job-tracker-trial .jt-panel-head { padding:17px 18px; border-bottom:1px solid var(--jt-line); display:flex; justify-content:space-between; gap:10px; align-items:center; }
+  #job-tracker-trial .jt-panel-head strong { font-size:14px; font-weight:500; display:flex; gap:7px; align-items:center; }
+  #job-tracker-trial .jt-panel-body { padding:2px 18px 16px; }
+  #job-tracker-trial .jt-group-label { font-size:11px; font-weight:500; color:var(--jt-secondary); margin:17px 0 5px; }
+  #job-tracker-trial .jt-agenda-row { display:flex; gap:12px; align-items:center; padding:12px 0; border-bottom:1px solid var(--jt-line); }
+  #job-tracker-trial .jt-agenda-row:last-child { border-bottom:0; }
+  #job-tracker-trial .jt-agenda-date { color:var(--jt-secondary); width:49px; flex-shrink:0; font-size:12px; font-variant-numeric:tabular-nums; }
+  #job-tracker-trial .jt-agenda-main { flex:1; min-width:0; }
+  #job-tracker-trial .jt-agenda-title { border:0; background:transparent; padding:0; text-align:left; line-height:1.6; font-size:12px; font-weight:500; }
+  #job-tracker-trial .jt-agenda-title:hover { color:var(--jt-accent); }
+  #job-tracker-trial .jt-task-item { display:flex; align-items:flex-start; gap:9px; padding:15px 0; border-bottom:1px solid var(--jt-line); }
+  #job-tracker-trial .jt-task-item:last-child { border-bottom:0; }
+  #job-tracker-trial .jt-task-item input { margin-top:4px; width:16px; height:16px; accent-color:var(--jt-accent); flex-shrink:0; }
+  #job-tracker-trial .jt-task-item label { cursor:pointer; font-size:12px; }
+  #job-tracker-trial .jt-task-item.jt-completed label { text-decoration:line-through; color:var(--jt-secondary); }
+  #job-tracker-trial .jt-task-body { flex:1; min-width:0; }
+  #job-tracker-trial .jt-mobile-nav { display:none; }
+  #job-tracker-trial .jt-task-count { color:var(--jt-accent); font-variant-numeric:tabular-nums; font-size:12px; }
+  #job-tracker-trial .jt-inline-action { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  #job-tracker-trial .jt-dim { color:var(--jt-secondary); }
+  @media (max-width:750px) { #job-tracker-trial .jt-today-grid {grid-template-columns:minmax(0,1fr);} }
+  @media (max-width:530px) { #job-tracker-trial .jt-mobile-nav {display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;} #job-tracker-trial .jt-mobile-nav button {font-size:12px;} #job-tracker-trial .jt-mobile-nav button[aria-current="page"] {background:var(--jt-soft);color:var(--jt-accent);} #job-tracker-trial .jt-form-row {grid-template-columns:1fr;} }
+  #job-tracker-trial .jt-error { color: var(--jt-red); background: var(--jt-red-soft); padding: 9px 11px; border-radius: 6px; font-size: 12px; }
+  #job-tracker-trial .jt-toast { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); padding: 10px 15px; border-radius: 8px; background: var(--jt-ink); color: var(--jt-surface); z-index: 20; box-shadow: 0 5px 20px var(--jt-shade); font-size: 12px; max-width: calc(100% - 20px); }
+  @media (max-width: 900px) { #job-tracker-trial .jt-shell { grid-template-columns: 58px minmax(0,1fr); } #job-tracker-trial .jt-sidebar { padding: 24px 7px 16px; } #job-tracker-trial .jt-brand { padding: 0; text-align: center; font-size: 14px; } #job-tracker-trial .jt-brand .jt-brand-name, #job-tracker-trial .jt-brand small, #job-tracker-trial .jt-nav-item span, #job-tracker-trial .jt-sidebar-bottom .jt-user, #job-tracker-trial .jt-theme-label { display:none; } #job-tracker-trial .jt-brand::before {content:"AIO";} #job-tracker-trial .jt-nav-item { padding: 11px; justify-content:center;} #job-tracker-trial .jt-sidebar-bottom {padding:0;} #job-tracker-trial .jt-sidebar-bottom button {padding:8px;} }
+  @media (max-width: 530px) { #job-tracker-trial .jt-shell { grid-template-columns:minmax(0,1fr); border-radius:9px; } #job-tracker-trial .jt-sidebar {display:none;} #job-tracker-trial .jt-main {padding:18px 13px;} #job-tracker-trial .jt-topline {margin-bottom:18px;} #job-tracker-trial .jt-topline .jt-season {display:none;} #job-tracker-trial .jt-heading {gap:8px; margin-bottom:18px;} #job-tracker-trial h2 {font-size:23px;} #job-tracker-trial .jt-subtitle {max-width:170px;} #job-tracker-trial .jt-heading .jt-button {font-size:12px; padding:8px 9px;} #job-tracker-trial .jt-stats {grid-template-columns:repeat(2,minmax(0,1fr)); padding:0; gap:0;} #job-tracker-trial .jt-stat {padding:13px 16px;} #job-tracker-trial .jt-stat:nth-child(2) {border-right:0;} #job-tracker-trial .jt-stat:nth-child(-n+2) {border-bottom:1px solid var(--jt-line);} #job-tracker-trial .jt-toolbar {gap:9px;} #job-tracker-trial .jt-filter {padding:7px 8px;} #job-tracker-trial .jt-search {max-width:none;width:100%;} #job-tracker-trial .jt-search input {width:100%;} #job-tracker-trial .jt-form input,#job-tracker-trial .jt-form select,#job-tracker-trial .jt-form textarea {font-size:16px;} #job-tracker-trial .jt-table-bottom {align-items:flex-start;} }
+  @media (pointer:coarse) { #job-tracker-trial button,#job-tracker-trial .jt-stage {min-height:44px;} #job-tracker-trial .jt-close {min-width:44px;} }
+  @media (prefers-reduced-motion:reduce) { #job-tracker-trial * {scroll-behavior:auto;} }
+  #job-tracker-trial .jt-context-menu { position:absolute; z-index:30; width:204px; padding:5px; border:1px solid var(--jt-line); border-radius:10px; background:var(--jt-surface); box-shadow:0 8px 30px var(--jt-shade); }
+  #job-tracker-trial .jt-context-menu button { width:100%; display:flex; align-items:center; gap:9px; border:0; background:transparent; border-radius:6px; padding:9px 10px; text-align:left; font-size:12px; }
+  #job-tracker-trial .jt-context-menu button:hover,#job-tracker-trial .jt-context-menu button:focus-visible { background:var(--jt-muted-surface); }
+  #job-tracker-trial .jt-context-title { padding:5px 10px 7px; color:var(--jt-secondary); font-size:11px; border-bottom:1px solid var(--jt-line); margin-bottom:3px; overflow-wrap:anywhere; }
+  #job-tracker-trial .jt-more { border:0; background:transparent; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; padding:0; color:var(--jt-secondary); }
+  #job-tracker-trial .jt-more:hover { background:var(--jt-muted-surface); }
+  #job-tracker-trial .jt-drawer-tools { display:flex; gap:7px; align-items:center; }
+  #job-tracker-trial .jt-panel { border-radius:16px; box-shadow:0 1px 2px var(--jt-shade),0 6px 20px -13px var(--jt-shade); }
+  #job-tracker-trial .jt-panel-head { padding:12px 15px; }
+  #job-tracker-trial .jt-panel-head strong { font-size:12px; color:var(--jt-secondary); }
+  #job-tracker-trial .jt-host-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:16px; align-items:start; }
+  #job-tracker-trial .jt-host-third { grid-column:span 4; }
+  #job-tracker-trial .jt-host-wide { grid-column:span 8; }
+  #job-tracker-trial .jt-host-plugin { grid-column:span 6; }
+  #job-tracker-trial .jt-host-side { grid-column:span 4; grid-row:span 2; display:grid; gap:16px; }
+  #job-tracker-trial .jt-greeting { min-height:126px; display:flex; align-items:center; gap:15px; padding:18px; }
+  #job-tracker-trial .jt-greeting strong { font-size:17px; font-weight:500; }
+  #job-tracker-trial .jt-progress-ring { width:54px; height:54px; flex-shrink:0; border:5px solid var(--jt-line); border-radius:50%; display:grid; place-items:center; color:var(--jt-accent); font-size:12px; }
+  #job-tracker-trial .jt-capture { min-height:126px; padding:15px; }
+  #job-tracker-trial .jt-capture-title { display:flex; justify-content:space-between; flex-wrap:wrap; gap:7px; font-size:11px; color:var(--jt-secondary); }
+  #job-tracker-trial .jt-capture-input { width:100%; padding:7px 8px; border:1px solid var(--jt-line); border-radius:7px; background:var(--jt-muted-surface); margin:12px 0 4px; font-size:11px; }
+  #job-tracker-trial .jt-mini-stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  #job-tracker-trial .jt-mini-stat { padding:10px 13px; }
+  #job-tracker-trial .jt-mini-stat span { display:block; font-size:11px; color:var(--jt-secondary); }
+  #job-tracker-trial .jt-mini-stat b { display:block; font-size:19px; font-weight:500; margin-top:3px; }
+  #job-tracker-trial .jt-heatmap { display:grid; grid-auto-flow:column; grid-template-rows:repeat(7,1fr); grid-template-columns:repeat(36,minmax(0,1fr)); gap:3px; padding:15px; }
+  #job-tracker-trial .jt-heat-cell { aspect-ratio:1; border-radius:3px; background:color-mix(in srgb,var(--jt-ink) 4.5%,transparent); }
+  #job-tracker-trial .jt-heat-cell[data-level="1"] { background:color-mix(in srgb,var(--jt-accent) 18%,transparent); }
+  #job-tracker-trial .jt-heat-cell[data-level="2"] { background:color-mix(in srgb,var(--jt-accent) 40%,transparent); }
+  #job-tracker-trial .jt-heat-cell[data-level="3"] { background:color-mix(in srgb,var(--jt-accent) 65%,transparent); }
+  #job-tracker-trial .jt-side-body { padding:15px; font-size:12px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  #job-tracker-trial .jt-host-today-tasks { padding:12px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  #job-tracker-trial .jt-native-today-task { position:relative; display:flex; gap:9px; align-items:center; border:1px solid color-mix(in srgb,var(--jt-blue) 26%,var(--jt-line)); border-radius:12px; padding:10px 12px; background:var(--jt-surface); min-width:0; }
+  #job-tracker-trial .jt-native-today-task.jt-task-done { background:var(--jt-soft); border-color:var(--jt-accent); }
+  #job-tracker-trial .jt-native-task-icon { width:40px; height:40px; border-radius:11px; display:grid; place-items:center; flex-shrink:0; background:var(--jt-blue-soft); }
+  #job-tracker-trial .jt-native-today-task .jt-native-task-icon { width:26px; height:26px; background:transparent; }
+  #job-tracker-trial .jt-native-task-title { min-width:0; flex:1; }
+  #job-tracker-trial .jt-native-task-title strong { display:block; font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+  #job-tracker-trial .jt-native-task-title .jt-small { margin-top:2px; }
+  #job-tracker-trial .jt-circle-check { padding:0; display:grid; place-items:center; height:25px; width:25px; border:1.5px solid color-mix(in srgb,var(--jt-blue) 55%,var(--jt-line)); border-radius:50%; background:transparent; flex-shrink:0; font-size:12px; color:var(--jt-blue); }
+  #job-tracker-trial .jt-circle-check[aria-pressed="true"] { background:var(--jt-accent); border-color:var(--jt-accent); color:var(--jt-onaccent); }
+  #job-tracker-trial .jt-native-task-card { padding:16px; border:1px solid color-mix(in srgb,var(--jt-blue) 22%,var(--jt-line)); border-radius:16px; background:var(--jt-surface); box-shadow:0 3px 15px -9px var(--jt-shade); min-width:0; }
+  #job-tracker-trial .jt-native-task-header { display:flex; align-items:center; gap:11px; }
+  #job-tracker-trial .jt-native-task-header .jt-circle-check { width:38px; height:38px; border-width:4px; border-color:var(--jt-blue-soft); }
+  #job-tracker-trial .jt-native-source { margin-top:12px; padding-top:10px; border-top:1px solid var(--jt-line); display:flex; gap:8px; align-items:center; justify-content:space-between; font-size:11px; color:var(--jt-secondary); }
+  #job-tracker-trial .jt-task-month { display:grid; grid-template-columns:repeat(11,minmax(0,1fr)); gap:5px; margin-top:13px; }
+  #job-tracker-trial .jt-task-week { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:7px; margin-top:13px; }
+  #job-tracker-trial .jt-task-month span,#job-tracker-trial .jt-task-week span { display:block; aspect-ratio:1; border-radius:5px; background:var(--jt-muted-surface); }
+  #job-tracker-trial .jt-task-month span:nth-child(-n+2),#job-tracker-trial .jt-task-week span:nth-child(1) { background:var(--jt-blue-soft); }
+  #job-tracker-trial [data-page="tasks"] { max-width:768px; margin:0 auto; }
+  #job-tracker-trial [data-page="tasks"] h2 { font-size:20px; letter-spacing:0; }
+  #job-tracker-trial .jt-task-toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:16px; }
+  #job-tracker-trial .jt-segment { display:inline-flex; padding:3px; background:var(--jt-muted-surface); border-radius:8px; gap:2px; }
+  #job-tracker-trial .jt-segment button { border:0; background:transparent; border-radius:5px; padding:4px 8px; font-size:11px; color:var(--jt-secondary); }
+  #job-tracker-trial .jt-segment button[aria-pressed="true"] { background:var(--jt-surface); color:var(--jt-ink); box-shadow:0 1px 3px var(--jt-shade); }
+  #job-tracker-trial .jt-task-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; align-items:start; }
+  #job-tracker-trial .jt-task-column { display:grid; gap:16px; }
+  #job-tracker-trial .jt-task-section { margin-bottom:18px; }
+  #job-tracker-trial .jt-task-section h3 { font-size:12px; color:var(--jt-secondary); margin:0 0 10px; }
+  #job-tracker-trial .jt-jobs-card-body { max-height:370px; overflow:auto; }
+  #job-tracker-trial .jt-nav-search { display:flex; align-items:center; justify-content:space-between; gap:10px; border:1px solid var(--jt-line); border-radius:7px; padding:7px 10px; font-size:11px; color:var(--jt-secondary); }
+  @media (max-width:900px) { #job-tracker-trial .jt-nav-search {display:none;} }
+  @media (max-width:900px) { #job-tracker-trial .jt-host-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } #job-tracker-trial .jt-host-third,#job-tracker-trial .jt-host-wide,#job-tracker-trial .jt-host-plugin {grid-column:span 2;} #job-tracker-trial .jt-host-side {grid-column:span 2;grid-row:auto;grid-template-columns:repeat(3,minmax(0,1fr));} #job-tracker-trial .jt-greeting,#job-tracker-trial .jt-capture {grid-column:span 1;} #job-tracker-trial .jt-mini-stats {grid-template-columns:repeat(4,minmax(0,1fr));} }
+  @media (max-width:600px) { #job-tracker-trial .jt-task-columns {grid-template-columns:1fr;} #job-tracker-trial .jt-host-today-tasks {grid-template-columns:1fr;} #job-tracker-trial .jt-host-side {grid-template-columns:1fr;} #job-tracker-trial .jt-greeting,#job-tracker-trial .jt-capture {grid-column:span 2;} #job-tracker-trial .jt-mini-stats {grid-template-columns:repeat(2,minmax(0,1fr));} #job-tracker-trial .jt-jobs-card-body {max-height:none;} }
+
+/* Native host adapter: theme/nav belong to AIODashboard. */
+#job-tracker-trial {
+  --jt-bg:var(--bg); --jt-surface:var(--surface); --jt-muted-surface:var(--surface-2);
+  --jt-ink:var(--ink); --jt-secondary:var(--ink-2); --jt-line:var(--line);
+  --jt-accent:var(--accent); --jt-onaccent:var(--on-accent);
+  --jt-soft:color-mix(in srgb,var(--accent) 10%,var(--surface));
+  --jt-blue:var(--info); --jt-violet:var(--violet); --jt-amber:var(--warn); --jt-red:var(--danger);
+  --jt-row:72px;
+}
+#job-tracker-trial .jt-shell { display:block; height:auto; border:0; border-radius:0; overflow:visible; background:transparent; }
+#job-tracker-trial .jt-main { padding:0; overflow:visible; }
+#job-tracker-trial h2 { display:flex; align-items:center; gap:12px; }
+#job-tracker-trial .jt-trial-badge { font-size:11px; letter-spacing:0; color:var(--jt-accent); background:var(--jt-soft); border:1px solid var(--jt-line); padding:4px 8px; border-radius:6px; }
+#job-tracker-trial .jt-trial-notice { display:flex; align-items:flex-start; gap:10px; padding:12px 14px; margin:0 0 20px; background:var(--jt-soft); border:1px solid var(--jt-line); border-radius:9px; color:var(--jt-accent); font-size:12px; line-height:1.7; }
+#job-tracker-trial .jt-trial-notice svg { margin-top:3px; }
+#job-tracker-trial .jt-trial-notice small { color:var(--jt-secondary); font-size:11px; }
+#job-tracker-trial .jt-card-notice { color:var(--jt-secondary); padding:12px 0 6px; font-size:11px; }
+#job-tracker-trial .jt-jobs-card-body { padding:0 18px 16px; }
+#job-tracker-trial .jt-panel-head { padding:14px 18px; }
+#job-tracker-trial .jt-overlay { position:fixed; inset:0; border-radius:0; z-index:100; overscroll-behavior:contain; }
+#job-tracker-trial .jt-drawer { height:100%; width:min(480px,100%); border-radius:0; }
+#job-tracker-trial .jt-drawer-content { overscroll-behavior:contain; }
+#job-tracker-trial .jt-context-menu { position:fixed; z-index:110; max-height:calc(100dvh - 12px); overflow-y:auto; }
+#job-tracker-trial .jt-toast { position:fixed; z-index:120; bottom:22px; right:22px; left:auto; max-width:calc(100vw - 44px); transform:none; }
+#job-tracker-trial :focus-visible { outline:2px solid var(--jt-accent); outline-offset:3px; }
+@media(max-width:600px) { #job-tracker-trial .jt-stat { padding:0 10px; } #job-tracker-trial .jt-heading { align-items:flex-start; } }
+
+</style>
+<div id="job-tracker-trial">
+  <div class="jt-shell"><div class="jt-main">
+      <section data-page="tracker">
+      <div class="jt-heading"><div><h2 tabindex="-1" data-view-heading>求职台<span class="jt-trial-badge">界面试用</span></h2><div class="jt-subtitle">投递、面试、下一步，都有记录。</div></div><button class="jt-button jt-primary" type="button" data-action="new"><i data-lucide="plus" aria-hidden="true"></i>新增岗位</button></div>
+      <div class="jt-trial-notice"><i data-lucide="flask-conical" aria-hidden="true"></i><span>演示数据 · 以 2026-09-08 为基准 · 重载后恢复样本<br><small>可放心试用编辑。此版本不保存真实求职记录，不创建软件任务。</small></span></div>
+      <div class="jt-stats" aria-label="求职概览">
+        <div class="jt-stat"><div class="jt-stat-label">全部岗位</div><div class="jt-stat-number" data-stat="total">8</div><small>每一个值得考虑的机会</small></div>
+        <div class="jt-stat"><div class="jt-stat-label">已投递</div><div class="jt-stat-number" data-stat="submitted">6</div><small data-stat="pending">还有 2 个待投递</small></div>
+        <div class="jt-stat"><div class="jt-stat-label">近期笔试 / 面试</div><div class="jt-stat-number" data-stat="interviews">3</div><small>未来 7 天 · 已确认</small></div>
+        <div class="jt-stat"><div class="jt-stat-label">收到 Offer</div><div class="jt-stat-number" data-stat="offers">1</div><small>待比较与决定</small></div>
+      </div>
+      <div class="jt-toolbar">
+        <div class="jt-filters" aria-label="按进度筛选">
+          <button class="jt-filter" type="button" data-filter="all" aria-pressed="true">全部<span class="jt-count" data-count="all">8</span></button>
+          <button class="jt-filter" type="button" data-filter="saved" aria-pressed="false">待投递<span class="jt-count" data-count="saved">2</span></button>
+          <button class="jt-filter" type="button" data-filter="active" aria-pressed="false">进行中<span class="jt-count" data-count="active">5</span></button>
+          <button class="jt-filter" type="button" data-filter="ended" aria-pressed="false">已结束<span class="jt-count" data-count="ended">1</span></button>
+        </div>
+        <label class="jt-search"><i data-lucide="search" aria-hidden="true"></i><input type="search" aria-label="搜索公司或岗位" placeholder="搜索公司、岗位" data-search></label>
+      </div>
+      <div class="jt-table-wrap">
+        <table aria-label="求职申请进度表">
+          <colgroup><col style="width:28%"><col style="width:11%"><col style="width:13%"><col style="width:14%"><col style="width:18%"><col style="width:16%"></colgroup>
+          <thead><tr><th scope="col">公司 / 岗位</th><th scope="col">投递情况</th><th scope="col">当前阶段</th><th scope="col">期望薪资</th><th scope="col">笔试 / 面试安排</th><th scope="col">下一步</th></tr></thead>
+          <tbody data-rows></tbody>
+        </table>
+        <div class="jt-empty" data-empty hidden>没有匹配的岗位，试试其他关键词或筛选条件。</div>
+      </div>
+      <div class="jt-table-bottom"><span data-result-count>共 8 个岗位</span><span>单击查看详情 · 右键更多操作</span></div>
+      </section>
+<section data-page="today" hidden>
+          <section class="jt-panel jt-host-plugin" aria-label="今日求职事项"><div class="jt-panel-head"><strong><i data-lucide="briefcase-business" aria-hidden="true"></i>求职台 · 试用</strong><span class="jt-small">完整表格见侧栏</span></div><div class="jt-panel-body jt-jobs-card-body"><div class="jt-card-notice">演示数据 · 基准日 2026-09-08 · 重载后恢复</div><div class="jt-small" data-today-summary></div><div data-today-agenda></div></div></section>
+</section>
+</div></div>
+  <div class="jt-overlay" data-overlay hidden>
+    <div class="jt-scrim" data-action="close" aria-hidden="true"></div>
+    <section class="jt-drawer" role="dialog" aria-modal="true" aria-labelledby="jt-trial-dialog-title">
+      <div class="jt-drawer-head" data-drawer-head></div>
+      <div class="jt-drawer-content" data-drawer-content></div>
+      <div class="jt-drawer-footer" data-drawer-footer hidden></div>
+      <div class="jt-confirm" data-discard-confirm hidden><div>还有未保存的修改。</div><div class="jt-confirm-actions"><button class="jt-button" type="button" data-action="keep-editing">继续编辑</button><button class="jt-button" type="button" data-action="discard-edit">放弃修改</button></div></div>
+    </section>
+  </div>
+  <div class="jt-context-menu" data-context-menu role="menu" aria-label="求职记录操作" hidden></div>
+  <div class="jt-toast" role="status" aria-live="polite" data-toast hidden></div>
+</div>
+<script>
+
+
+  const $ = (selector) => root.querySelector(selector);
+  const stages = {saved:'待投递',applied:'已投递',assessment:'笔试 / 测评',interview:'面试中',offer:'Offer',joined:'已入职',rejected:'未通过',withdrawn:'主动放弃',closed:'岗位关闭'};
+  const ended = new Set(['joined','rejected','withdrawn','closed']);
+  const referenceDay = '2026-09-08';
+  const jobs = [
+    {id:1,company:'青禾科技',role:'财务分析实习生',city:'上海',kind:'实习 · 现场',stage:'interview',submitted:true,date:'2026-09-02',salary:'200–250 元/天',salaryNote:'个人期望',next:'复盘业务案例',due:'2026-09-09',channel:'公司招聘官网',note:'重点准备：收入拆解、费用分析，以及用数据解释业务变化的案例。',meetings:[{round:'二面 · 业务面',date:'2026-09-10',time:'14:00',state:'confirmed',mode:'线上 · 会议链接待补'},{round:'一面 · 初面',date:'2026-09-06',time:'10:00',state:'done',mode:'已完成 · 围绕简历与实习经历'}],history:[['09-07','收到二面邀请，已确认时间'],['09-06','完成一面'],['09-02','通过公司官网投递']]},
+    {id:2,company:'远山咨询',role:'审计实习生',city:'北京',kind:'实习 · 混合',stage:'assessment',submitted:true,date:'2026-09-04',salary:'180–220 元/天',salaryNote:'个人期望',next:'完成在线测评',due:'2026-09-09',channel:'校园招聘',note:'测评后预计安排面试，具体时刻尚未确认。',meetings:[{round:'一面 · 初面',date:'2026-09-12',time:'',state:'estimated',mode:'形式待确认'}],history:[['09-05','收到测评邀请'],['09-04','完成投递']]},
+    {id:3,company:'澄川消费',role:'管培生 · 财务',city:'杭州',kind:'正式 · 现场',stage:'offer',submitted:true,date:'2026-08-24',salary:'12–15 千元/月',salaryNote:'14 薪 · 个人期望',next:'核对轮岗安排',due:'2026-09-13',channel:'校园招聘',note:'Offer 薪酬与个人期望分别记录；决定前核对轮岗、工作地点和报到时间。',meetings:[{round:'终面',date:'2026-09-03',time:'16:00',state:'done',mode:'已完成'}],history:[['09-07','收到 Offer，待决定'],['09-03','完成终面'],['08-24','完成投递']]},
+    {id:4,company:'星屿互联',role:'经营分析师',city:'深圳',kind:'正式 · 现场',stage:'applied',submitted:true,date:'2026-09-06',salary:'18–22 万元/年',salaryNote:'个人期望',next:'查询投递进度',due:'2026-09-11',channel:'公司招聘官网',note:'持续关注业务分析方向，等待简历筛选结果。',meetings:[],history:[['09-06','完成投递']]},
+    {id:5,company:'松石制造',role:'财务实习生',city:'苏州',kind:'实习 · 现场',stage:'saved',submitted:false,date:'',salary:'面议',salaryNote:'',next:'完善项目经历',due:'2026-09-09',channel:'校园招聘',note:'先核对实习开始时间与每周到岗天数，再投递。',meetings:[],history:[['09-07','收藏岗位，尚未投递']]},
+    {id:6,company:'云帆研究',role:'行业研究助理',city:'远程',kind:'实习 · 远程',stage:'interview',submitted:true,date:'2026-08-30',salary:'200 元/天',salaryNote:'个人期望',next:'整理行业简报',due:'2026-09-08',channel:'公司招聘官网',note:'准备一份自己熟悉行业的研究简报，突出信息来源与推理过程。',meetings:[{round:'一面 · 专业面',date:'2026-09-09',time:'10:30',state:'confirmed',mode:'线上 · 视频面试'}],history:[['09-06','确认专业面试时间'],['08-30','完成投递']]},
+    {id:7,company:'山海零售',role:'财务专员',city:'上海',kind:'正式 · 现场',stage:'rejected',submitted:true,date:'2026-08-22',salary:'10–12 千元/月',salaryNote:'13 薪 · 个人期望',next:'记录复盘',due:'',channel:'招聘平台',note:'保留申请记录，复盘可改善的部分；不再显示未来跟进提示。',meetings:[],history:[['09-02','收到未通过通知'],['08-22','完成投递']]},
+    {id:8,company:'栖木生物',role:'财务分析助理',city:'南京',kind:'正式 · 现场',stage:'saved',submitted:false,date:'',salary:'10–12 千元/月',salaryNote:'13 薪 · 个人期望',next:'评估岗位要求',due:'2026-09-12',channel:'公司招聘官网',note:'比较岗位职责、成长空间与地点后决定是否投递。',meetings:[],history:[['09-08','收藏岗位，尚未投递']]}
+  ];
+  const refNow = '2026-09-08T09:00';
+  const refWeekEnd = '2026-09-15';
+  const meetingStates = {estimated:'预计 / 待确认',confirmed:'已确认',done:'已完成',cancelled:'已取消'};
+  const meetingTypes = {assessment:'笔试 / 测评',interview:'面试'};
+  const actions = new Map();
+  const tasks = [];
+  let actionSequence = 0;
+  const newAction = job => {
+    const action = {id:`action-${++actionSequence}`,jobId:job.id,title:job.next,due:job.due,done:false,doneAt:'',obsolete:false};
+    actions.set(action.id, action);
+    job.actionId = action.id;
+    return action;
+  };
+  for (const job of jobs) {
+    job.plannedApply = job.id===5 ? referenceDay : job.id===8 ? '2026-09-12' : '';
+    job.deadline = job.id===5 ? '2026-09-11' : job.id===8 ? '2026-09-15' : '';
+    job.meetings.forEach((meeting,index)=>Object.assign(meeting,{id:`meeting-${job.id}-${index+1}`,type:'interview',notes:''}));
+    newAction(job);
+  }
+  jobs.find(job=>job.id===2).meetings.unshift({id:'meeting-2-exam',type:'assessment',round:'在线测评',date:'2026-09-09',time:'19:00',state:'confirmed',mode:'线上 · 招聘平台',notes:'提前检查摄像头和网络。'});
+  let filter='all', search='', page='tracker', selected=null, drawerMode='overview', meetingId=null, proposedStage=null, opener=null, toastTimer, initialForm='', pendingLeave=null, originalScroll=0;
+  let menuJob=null, menuMeeting=null, menuAnchor=null;
+  const escapeText = value => String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const dateLabel = value => value ? value.slice(5).replace('-','/') : '待定';
+  const icons = () => renderIcons(root);
+  const selectOptions = (values,current) => Object.entries(values).map(([key,label])=>`<option value="${key}"${key===current?' selected':''}>${escapeText(label)}</option>`).join('');
+  const active = job => !ended.has(job.stage);
+  const actionFor = job => actions.get(job.actionId);
+  const taskFor = action => tasks.find(task=>task.actionId===action.id);
+  const scheduled = meeting => ['confirmed','estimated'].includes(meeting.state);
+  const future = meeting => scheduled(meeting) && (!meeting.date || (meeting.date>=referenceDay && (meeting.state!=='confirmed' || meeting.date+'T'+meeting.time>=refNow)));
+  const byTime = (a,b) => ((a.date||'9999')+(a.time||'23:59')).localeCompare((b.date||'9999')+(b.time||'23:59'));
+  const upcoming = job => active(job) ? [...job.meetings].filter(future).sort(byTime)[0] : null;
+  const appointments = () => jobs.filter(active).flatMap(job=>job.meetings.map(meeting=>({job,meeting})));
+  const weekAppointments = () => appointments().filter(({meeting})=>meeting.state==='confirmed' && future(meeting) && meeting.date<refWeekEnd).sort((a,b)=>byTime(a.meeting,b.meeting));
+  const describeMeeting = meeting => `${meetingTypes[meeting.type]} · ${meeting.round} · ${meeting.date||'日期待定'} ${meeting.time||'时刻待定'} · ${meetingStates[meeting.state]}`;
+  const inFilter = (job,value) => value==='all' || (value==='saved'&&!job.submitted&&active(job)) || (value==='active'&&job.submitted&&active(job)) || (value==='ended'&&!active(job));
+  const sourceIsActive = action => !action.obsolete && active(jobs.find(job=>job.id===action.jobId));
+  function render() {
+    const shown=jobs.filter(job=>inFilter(job,filter)&&(job.company+' '+job.role).toLowerCase().includes(search));
+    $('[data-rows]').innerHTML=shown.map(job=>{
+      const meeting=upcoming(job), action=actionFor(job);
+      return `<tr data-row-id="${job.id}" data-context-job="${job.id}"><td><div class="jt-company"><span class="jt-company-mark" aria-hidden="true">${escapeText(job.company[0])}</span><button type="button" class="jt-company-link" data-open="${job.id}" aria-haspopup="menu"><span>${escapeText(job.company)}</span><span class="jt-small">${escapeText(job.role)}</span></button></div></td>
+      <td>${job.submitted?`<div class="jt-applied"><i data-lucide="check" aria-hidden="true"></i>${job.date?dateLabel(job.date):'时间未记'}</div><div class="jt-small">已投递</div>`:'<div class="jt-small">尚未投递</div>'}</td>
+      <td><select class="jt-stage ${job.stage}" data-stage="${job.id}" aria-label="${escapeText(job.company)}当前阶段">${selectOptions(stages,job.stage)}</select></td>
+      <td>${escapeText(job.salary||'未填写')}<div class="jt-small">${escapeText(job.salaryNote||'')}</div></td>
+      <td><button type="button" class="jt-schedule-button" data-schedule-job="${job.id}" data-meeting-id="${meeting?.id||''}" aria-label="${meeting?'编辑':'新增'}${escapeText(job.company)}笔试面试安排">${meeting?`<div>${dateLabel(meeting.date)}${meeting.time?' '+meeting.time:''}</div><div class="jt-small ${meeting.state==='confirmed'?'jt-confirmed':'jt-estimated'}">${meeting.state==='confirmed'?'已确认':'预计'} · ${escapeText(meeting.round)}</div>`:'<span class="jt-confirmed">＋ 添加安排</span>'}</button></td>
+      <td><span class="${action.done?'jt-dim':''}">${escapeText(action.title||'未填写')}</span><div class="jt-small${action.due===referenceDay?' jt-estimated':''}">${action.done?'已完成':action.due&&active(job)?(action.due===referenceDay?'今天':dateLabel(action.due)):''}${taskFor(action)?' · 已预览卡片':''}</div></td></tr>`;
+    }).join('');
+    $('[data-empty]').hidden=shown.length!==0;
+    $('[data-result-count]').textContent=`显示 ${shown.length} / ${jobs.length} 个岗位`;
+    $('[data-stat="total"]').textContent=jobs.length;
+    $('[data-stat="submitted"]').textContent=jobs.filter(job=>job.submitted).length;
+    $('[data-stat="pending"]').textContent=`还有 ${jobs.filter(job=>inFilter(job,'saved')).length} 个待投递`;
+    $('[data-stat="interviews"]').textContent=weekAppointments().length;
+    $('[data-stat="offers"]').textContent=jobs.filter(job=>job.stage==='offer').length;
+    root.querySelectorAll('[data-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.filter===filter)));
+    root.querySelectorAll('[data-count]').forEach(label=>label.textContent=jobs.filter(job=>inFilter(job,label.dataset.count)).length);
+    root.querySelectorAll('[data-page]').forEach(section=>section.hidden=section.dataset.page!==page);
+    root.querySelectorAll('[data-view]').forEach(button=>{
+      if(button.dataset.view===page)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+      if(button.classList.contains('jt-nav-item'))button.classList.toggle('jt-active',button.dataset.view===page);
+    });
+    renderToday();
+    icons();
+  }
+  function navigate(nextPage) {closeMenu(false);page=nextPage;render();$('.jt-main').scrollTop=0;}
+  function notify(message) {clearTimeout(toastTimer);$('[data-toast]').textContent=message;$('[data-toast]').hidden=false;toastTimer=setTimeout(()=>$('[data-toast]').hidden=true,2800);}
+  function joinButton(job) {
+    const action=actionFor(job);
+    if(!action.title||!active(job))return '';
+    return `<button class="jt-text-button" type="button" data-join="${job.id}">预览任务卡片</button>`;
+  }
+  function agendaMeeting({job,meeting}) {
+    return `<div class="jt-agenda-row" data-context-job="${job.id}" data-context-meeting="${meeting.id}"><div class="jt-agenda-date">${dateLabel(meeting.date)}<div class="jt-small">${meeting.time||'时刻待定'}</div></div><div class="jt-agenda-main"><button class="jt-agenda-title" type="button" data-open="${job.id}">${escapeText(job.company)} · ${escapeText(meeting.round)}</button><div class="jt-small">${meetingTypes[meeting.type]} · ${meetingStates[meeting.state]}</div></div></div>`;
+  }
+  function renderToday() {
+    const upcomingItems=weekAppointments();
+    const pending=jobs.filter(job=>!job.submitted&&active(job)&&((job.plannedApply&&job.plannedApply<=referenceDay)||(job.deadline&&job.deadline<='2026-09-11')));
+    const following=jobs.filter(job=>active(job)&&actionFor(job).title&&!actionFor(job).done&&actionFor(job).due&&actionFor(job).due<=referenceDay);
+    const estimates=appointments().filter(({meeting})=>meeting.state==='estimated');
+    const past=appointments().filter(({meeting})=>meeting.state==='confirmed'&&!future(meeting));
+    $('[data-today-summary]').textContent=`待投递 ${jobs.filter(job=>inFilter(job,'saved')).length} · Offer ${jobs.filter(job=>job.stage==='offer').length}`;
+    const groups=[];
+    if(past.length)groups.push(`<div class="jt-group-label">待补记录</div>${past.map(agendaMeeting).join('')}`);
+    if(upcomingItems.length)groups.push(`<div class="jt-group-label">未来 7 天 · 已确认</div>${upcomingItems.map(agendaMeeting).join('')}`);
+    if(pending.length)groups.push(`<div class="jt-group-label">计划投递 / 临近截止</div>${pending.map(job=>`<div class="jt-agenda-row" data-context-job="${job.id}"><div class="jt-agenda-date">待投递</div><div class="jt-agenda-main"><button class="jt-agenda-title" type="button" data-open="${job.id}">${escapeText(job.company)} · ${escapeText(job.role)}</button><div class="jt-small">${job.plannedApply?'计划 '+dateLabel(job.plannedApply):''}${job.deadline?' · 截止 '+dateLabel(job.deadline):''}</div></div></div>`).join('')}`);
+    if(following.length)groups.push(`<div class="jt-group-label">今天要做 / 待跟进</div>${following.map(job=>`<div class="jt-agenda-row" data-context-job="${job.id}"><div class="jt-agenda-date">${actionFor(job).due<referenceDay?'已逾期':'今天'}</div><div class="jt-agenda-main"><button class="jt-agenda-title" type="button" data-open="${job.id}">${escapeText(actionFor(job).title)}</button><div class="jt-small">${escapeText(job.company)} · ${stages[job.stage]}</div></div>${joinButton(job)}</div>`).join('')}`);
+    if(estimates.length)groups.push(`<div class="jt-group-label">预计安排 · 待确认</div>${estimates.map(agendaMeeting).join('')}`);
+    $('[data-today-agenda]').innerHTML=groups.join('')||'<div class="jt-empty">今天没有需要处理的求职事项</div>';
+  }
+  function nativeTask(item,compact=false) {
+    const done=item.count>=item.target, attr=item.actionId?`data-linked-check="${item.actionId}"`:`data-base-check="${item.id}"`;
+    const label=done?'撤销完成':item.target>1?'打卡 +1':'完成打卡';
+    const check=`<button type="button" class="jt-circle-check" ${attr} aria-label="${escapeText(label+'：'+item.title)}" aria-pressed="${done}"${item.cancelled?' disabled':''}>${done?'✓':item.target>1&&!compact?`${item.count}/${item.target}`:''}</button>`;
+    const subtitle=item.cancelled?'已取消':done?'已完成':item.target>1?`${item.count}/${item.target}`:item.once?(item.due?'计划 '+dateLabel(item.due)+' · 一次性':'一次性 · 待完成'):'待打卡';
+    const context=item.job?` data-context-job="${item.job.id}"`:'';
+    const main=`<div class="jt-native-task-icon" aria-hidden="true">${item.job?'<i data-lucide="briefcase-business"></i>':'✓'}</div><div class="jt-native-task-title"><strong>${escapeText(item.title)}</strong><div class="jt-small">${escapeText(subtitle)}</div></div>${check}`;
+    if(compact)return `<div class="jt-native-today-task${done?' jt-task-done':''}"${context}>${main}</div>`;
+    const cells=item.style==='month'?30:item.style==='week'?7:0;
+    const heat=cells?`<div class="${item.style==='month'?'jt-task-month':'jt-task-week'}" role="img" aria-label="${escapeText(item.title)}${item.style==='month'?'月':'周'}度热力图示例">${Array.from({length:cells},()=>'<span></span>').join('')}</div>`:'';
+    const source=item.job?`<div class="jt-native-source"><button class="jt-text-button" type="button" data-open="${item.job.id}" aria-label="查看${escapeText(item.job.company)}关联申请">${escapeText(item.job.company)} ↗</button><span>${stages[item.job.stage]}</span></div>`:'';
+    return `<article class="jt-native-task-card"${context}><div class="jt-native-task-header">${main}${item.job?`<button class="jt-more" type="button" data-menu-job="${item.job.id}" aria-label="${escapeText(item.job.company)}关联申请操作"><i data-lucide="ellipsis" aria-hidden="true"></i></button>`:''}</div>${heat}${source}</article>`;
+  }
+  function toggleLinked(id) {
+    const action=actions.get(id);if(!action||!sourceIsActive(action))return;
+    action.done=!action.done;action.doneAt=action.done?referenceDay:'';
+    const job=jobs.find(item=>item.id===action.jobId);job.history.unshift(['09-08',`${action.done?'完成':'重新打开'}行动：${action.title}（岗位阶段保持${stages[job.stage]}）`]);
+    render();
+    if(!$('[data-overlay]').hidden){renderDrawer();$(`[data-linked-check="${id}"]`)?.focus({preventScroll:true});}
+    notify(action.done?'演示行动已完成 · 岗位阶段保持不变':'演示行动已重新打开');
+  }
+  function joinTask(job) {
+    const action=actionFor(job);
+    if(!action.title||!active(job))return;
+    if(!taskFor(action)) {
+      tasks.push({actionId:action.id});
+      job.history.unshift(['09-08',`预览“${action.title}”任务卡片（仅演示）`]);
+    }
+    render();
+    openJob(job,'task-preview');
+  }
+  function closeMenu(restore=true) {
+    if($('[data-context-menu]').hidden)return;
+    $('[data-context-menu]').hidden=true;
+    if(restore&&menuAnchor?.isConnected)menuAnchor.focus({preventScroll:true});
+    menuJob=null;menuMeeting=null;
+  }
+  function openMenu(job,anchor,position=null,targetMeeting=null) {
+    if(!job)return;
+    menuJob=job;menuMeeting=targetMeeting;menuAnchor=anchor;
+    const menu=$('[data-context-menu]'), action=actionFor(job);
+    menu.innerHTML=`<div class="jt-context-title">${escapeText(job.company)}</div><button type="button" role="menuitem" data-menu-op="overview"><i data-lucide="panel-right" aria-hidden="true"></i>查看投递详情</button><button type="button" role="menuitem" data-menu-op="record"><i data-lucide="pencil" aria-hidden="true"></i>编辑投递信息</button><button type="button" role="menuitem" data-menu-op="${targetMeeting?'meeting':'schedules'}"><i data-lucide="calendar-clock" aria-hidden="true"></i>${targetMeeting?'编辑这次安排':'笔试 / 面试安排'}</button><button type="button" role="menuitem" data-menu-op="new-meeting"><i data-lucide="plus" aria-hidden="true"></i>新增笔试 / 面试</button>${action.title&&active(job)?`<button type="button" role="menuitem" data-menu-op="join"><i data-lucide="list-plus" aria-hidden="true"></i>预览任务卡片</button>`:''}`;
+    menu.hidden=false;icons();
+    const bounds={left:0,top:0,width:window.innerWidth,height:window.innerHeight},anchorBounds=anchor.getBoundingClientRect();
+    const x=(position?.x??anchorBounds.right)-bounds.left,y=(position?.y??anchorBounds.bottom)-bounds.top;
+    menu.style.left=`${Math.max(6,Math.min(x,bounds.width-menu.offsetWidth-6))}px`;
+    menu.style.top=`${Math.max(6,Math.min(y,bounds.height-menu.offsetHeight-6))}px`;
+    menu.querySelector('button:not(:disabled)')?.focus({preventScroll:true});
+  }
+  function contextTarget(target) {
+    const row=target.closest('[data-context-job],[data-menu-job],[data-open],[data-schedule-job]');
+    const id=row?.dataset.contextJob||row?.dataset.menuJob||row?.dataset.open||row?.dataset.scheduleJob;
+    const job=id?jobs.find(item=>item.id===Number(id)):target.closest('.jt-drawer')&&!activeForm()?selected:null;
+    const schedule=target.closest('[data-context-meeting],[data-meeting-id]');
+    const anchor=target.closest('button')||row?.querySelector('button')||$('[data-action="close-button"]');
+    return {job,anchor,meeting:schedule?.dataset.contextMeeting||schedule?.dataset.meetingId||null};
+  }
+  function chooseMenu(operation) {
+    const job=menuJob,targetMeeting=menuMeeting,anchor=menuAnchor;
+    closeMenu(false);if(!job)return;
+    if(operation==='join'){joinTask(job);return;}
+    const mode=operation==='new-meeting'?'meeting':operation;
+    if(!$('[data-overlay]').hidden&&selected?.id===job.id){
+      drawerMode=mode;meetingId=operation==='meeting'?targetMeeting:null;renderDrawer();
+      (activeForm()?.querySelector('input')||$('[data-action="close-button"]'))?.focus({preventScroll:true});
+    }else{openJob(job,mode,operation==='meeting'?targetMeeting:null);opener=anchor;}
+  }
+  function openJob(job,mode='overview',targetMeeting=null,targetStage=null) {
+    closeMenu(false);
+    opener=document.activeElement;
+    originalScroll=document.scrollingElement?.scrollTop||0;
+    selected=job;drawerMode=mode;meetingId=targetMeeting;proposedStage=targetStage;
+    $('[data-overlay]').hidden=false;$('.jt-shell').inert=true;
+    $('[data-discard-confirm]').hidden=true;pendingLeave=null;
+    renderDrawer();
+    const field=$('[data-record-form] input')||$('[data-meeting-form] input')||$('[data-action="close-button"]');
+    field?.focus({preventScroll:true});
+  }
+  function closeNow(restore=true) {
+    closeMenu(false);
+    $('[data-overlay]').hidden=true;$('.jt-shell').inert=false;
+    $('[data-discard-confirm]').hidden=true;pendingLeave=null;
+    selected=null;meetingId=null;proposedStage=null;
+    if(!restore)return;
+    if(document.scrollingElement)document.scrollingElement.scrollTop=originalScroll;
+    const fallback=$('[data-view-heading]')||$('.jt-panel-head');
+    (opener?.isConnected?opener:fallback)?.focus({preventScroll:true});
+  }
+  const activeForm = () => $('[data-record-form]')||$('[data-meeting-form]');
+  const signature = () => activeForm()?JSON.stringify([...new FormData(activeForm()).entries()]):'';
+  function leave(callback) {
+    if(activeForm()&&signature()!==initialForm){pendingLeave=callback;$('[data-discard-confirm]').hidden=false;$('[data-action="keep-editing"]').focus();}
+    else callback();
+  }
+  function renderDrawer() {
+    const job=selected, isForm=['record','meeting'].includes(drawerMode);
+    const heading=drawerMode==='task-preview'?'任务卡片预览':drawerMode==='meeting'?(meetingId?'编辑笔试 / 面试':'新增笔试 / 面试'):drawerMode==='record'&&job?'编辑投递信息':job?job.company:'记录一个新机会';
+    $('[data-drawer-head]').innerHTML=`<div class="jt-drawer-top"><span>${job?'岗位详情 · 演示数据':'新增岗位 · 仅本次试用'}</span><div class="jt-drawer-tools">${job&&!isForm?`<button type="button" class="jt-more" data-menu-job="${job.id}" aria-label="更多操作" aria-haspopup="menu"><i data-lucide="ellipsis" aria-hidden="true"></i></button>`:''}<button type="button" class="jt-close" data-action="close-button" aria-label="关闭详情"><i data-lucide="x" aria-hidden="true"></i></button></div></div><h3 id="jt-trial-dialog-title">${escapeText(heading)}</h3><div class="jt-small">${job?escapeText(job.company+' · '+job.role):'先记下公司和岗位，其余慢慢补充。'}</div>${!isForm?`<div class="jt-drawer-tabs" aria-label="详情内容"><button type="button" data-tab="overview" aria-pressed="${drawerMode==='overview'}">概览</button><button type="button" data-tab="schedules" aria-pressed="${drawerMode==='schedules'}">笔试 / 面试 · ${job.meetings.length}</button><button type="button" data-tab="history" aria-pressed="${drawerMode==='history'}">动态</button></div>`:''}`;
+    const content=$('[data-drawer-content]');
+    if(drawerMode==='record')renderRecordForm(content);
+    else if(drawerMode==='meeting')renderMeetingForm(content);
+    else if(drawerMode==='task-preview') {
+      const action=actionFor(job);
+      content.innerHTML=`<div class="jt-trial-notice"><i data-lucide="flask-conical" aria-hidden="true"></i><span>任务卡片效果演示<br><small>没有创建软件任务，点击圆圈仅改变此处的演示状态。</small></span></div>${nativeTask({id:action.id,actionId:action.id,title:action.title,style:'day',count:action.done?1:0,target:1,once:true,due:action.due,job})}<div class="jt-note" style="margin-top:18px">正式版可把“准备案例”“完成测评”等行动关联到任务。求职阶段仍由你确认，完成行动不会自动进入下一轮面试。</div>`;
+    }
+    else if(drawerMode==='overview') {
+      const meeting=upcoming(job), action=actionFor(job);
+      content.innerHTML=`${meeting?`<div class="jt-next-interview" data-context-job="${job.id}" data-context-meeting="${meeting.id}"><div class="jt-next-label"><i data-lucide="calendar-clock" aria-hidden="true"></i>${meetingTypes[meeting.type]} · ${meetingStates[meeting.state]}</div><div class="jt-next-time">${dateLabel(meeting.date)}${meeting.time?' · '+meeting.time:''}</div><div class="jt-inline-action"><span class="jt-small">${escapeText(meeting.round+' · '+meeting.mode)}</span><button class="jt-more" type="button" data-menu-job="${job.id}" data-meeting-id="${meeting.id}" aria-label="安排更多操作"><i data-lucide="ellipsis" aria-hidden="true"></i></button></div></div>`:''}
+      <div class="jt-section-label">申请信息</div><dl class="jt-facts"><dt>当前阶段</dt><dd><span class="jt-stage ${job.stage}">${stages[job.stage]}</span></dd><dt>投递时间</dt><dd>${job.submitted?job.date||'已投递，时间未记':'尚未投递'}</dd><dt>期望薪资</dt><dd>${escapeText(job.salary||'未填写')}<div class="jt-small">${escapeText(job.salaryNote||'')}</div></dd><dt>城市 / 形式</dt><dd>${escapeText(job.city+' · '+job.kind)}</dd><dt>计划投递</dt><dd>${job.plannedApply||'未设置'}</dd><dt>招聘截止</dt><dd>${job.deadline||'未设置'}</dd><dt>投递渠道</dt><dd>${escapeText(job.channel||'未填写')}</dd></dl>
+      <div class="jt-section"><div class="jt-section-label">下一步<span class="jt-small">${action.done?'已完成':action.due?dateLabel(action.due):''}</span></div><div class="jt-inline-action"><span>${escapeText(action.title||'暂未安排')}</span>${joinButton(job)}</div>${taskFor(action)?'<div class="jt-small">已生成演示卡片 · 未创建软件任务</div>':''}</div><div class="jt-section"><div class="jt-section-label">备注与准备</div><div class="jt-note">${escapeText(job.note||'暂未填写')}</div></div>`;
+    } else if(drawerMode==='schedules') {
+      content.innerHTML=`<div class="jt-section-label">笔试与面试安排<button class="jt-button jt-primary" type="button" data-action="new-meeting"><i data-lucide="plus" aria-hidden="true"></i>新增安排</button></div>${job.meetings.length?[...job.meetings].sort(byTime).map(meeting=>`<div class="jt-meeting" data-context-job="${job.id}" data-context-meeting="${meeting.id}"><div class="jt-meeting-head"><div><strong>${escapeText(meeting.round)}</strong><div class="jt-small ${meeting.state==='estimated'?'jt-estimated':meeting.state==='confirmed'?'jt-confirmed':''}">${meetingTypes[meeting.type]} · ${meetingStates[meeting.state]}</div></div><button class="jt-more" type="button" data-menu-job="${job.id}" data-meeting-id="${meeting.id}" aria-label="${escapeText(meeting.round)}更多操作"><i data-lucide="ellipsis" aria-hidden="true"></i></button></div><div style="margin-top:10px">${meeting.date||'日期待定'}${meeting.time?' · '+meeting.time:''}</div><div class="jt-note">${escapeText(meeting.mode||'地点 / 形式待补充')}</div>${meeting.notes?`<div class="jt-note">${escapeText(meeting.notes)}</div>`:''}</div>`).join(''):'<div class="jt-empty">还没有安排，点击“新增安排”添加。</div>'}`;
+    } else content.innerHTML=`<ol class="jt-history">${job.history.map(([date,message])=>`<li>${escapeText(message)}<div class="jt-small">${escapeText(date)}</div></li>`).join('')}</ol>`;
+    const footer=$('[data-drawer-footer]');footer.replaceChildren();
+    const buttons=content.querySelector('.jt-form-actions');
+    if(buttons)footer.append(buttons);
+    footer.hidden=!buttons;
+    initialForm=signature();
+    content.scrollTop=0;
+    icons();
+  }
+  function renderRecordForm(content) {
+    const job=selected||{company:'',role:'',city:'',kind:'实习 · 现场',stage:'saved',submitted:false,date:'',salary:'',channel:'',plannedApply:'',deadline:'',next:'',due:'',note:''};
+    const submission=job.submitted?(job.date?'dated':'unknown'):'no';
+    content.innerHTML=`<form class="jt-form" data-record-form>
+    <label>公司名称 *<input name="company" value="${escapeText(job.company)}" required maxlength="80" autocomplete="off"></label><label>岗位名称 *<input name="role" value="${escapeText(job.role)}" required maxlength="100" autocomplete="off"></label>
+    <div class="jt-form-row"><label>城市<input name="city" value="${escapeText(job.city)}" maxlength="60"></label><label>岗位性质 / 工作形式<input name="kind" value="${escapeText(job.kind)}" placeholder="实习 · 远程" maxlength="60"></label></div>
+    <label>当前阶段<select name="stage">${selectOptions(stages,proposedStage||job.stage)}</select></label>
+    <div class="jt-form-row"><label>投递情况<select name="submission">${selectOptions({no:'尚未投递',unknown:'已投递，时间未记',dated:'已投递，填写日期'},submission)}</select></label><label>投递日期<input type="date" name="date" value="${job.date}"></label></div>
+    <div class="jt-form-row"><label>计划投递日期<input type="date" name="plannedApply" value="${job.plannedApply}"></label><label>招聘截止日期<input type="date" name="deadline" value="${job.deadline}"></label></div>
+    <label>期望薪资（演示录入）<input name="salary" value="${escapeText(job.salary)}" placeholder="如：200–250 元/天" maxlength="80"></label><label>投递渠道<input name="channel" value="${escapeText(job.channel)}" maxlength="80"></label>
+    <label>下一步行动<input name="next" value="${escapeText(job.next)}" placeholder="如：准备财务案例" maxlength="100"></label><label>行动 / 跟进日期<input type="date" name="due" value="${job.due}"></label><label>备注<textarea name="note" maxlength="2000">${escapeText(job.note)}</textarea></label>
+    <div class="jt-error" data-form-error role="alert" hidden></div><div class="jt-form-actions"><button class="jt-button" type="button" data-action="cancel-edit">取消</button><button class="jt-button jt-primary" type="button" data-action="save-record">${selected?'保存更改':'添加岗位'}</button></div></form>`;
+  }
+  function renderMeetingForm(content) {
+    const current=selected.meetings.find(meeting=>meeting.id===meetingId)||{type:selected.stage==='assessment'?'assessment':'interview',round:'',state:'estimated',date:'',time:'',mode:'',notes:''};
+    content.innerHTML=`<form class="jt-form" data-meeting-form><div class="jt-form-row"><label>类型<select name="type">${selectOptions(meetingTypes,current.type)}</select></label><label>安排状态<select name="state">${selectOptions(meetingStates,current.state)}</select></label></div>
+    <label>阶段 / 轮次名称 *<input name="round" value="${escapeText(current.round)}" placeholder="如：在线笔试、一面、二面、HR 面" required maxlength="70"></label>
+    <div class="jt-form-row"><label>日期<input type="date" name="date" value="${current.date}"></label><label>时刻<input type="time" name="time" value="${current.time}"></label></div><div class="jt-small">已确认的安排需要日期和时刻；预计安排可以留空。</div>
+    <label>地点 / 线上方式<input name="mode" value="${escapeText(current.mode)}" placeholder="如：线上视频 / 公司会议室" maxlength="160"></label><label>准备事项 / 结果备注<textarea name="notes" maxlength="2000">${escapeText(current.notes)}</textarea></label>
+    <label class="jt-check"><input type="checkbox" name="updateStage"><span>同时将岗位阶段改为相应的“笔试 / 测评”或“面试中”</span></label>
+    <div class="jt-error" data-form-error role="alert" hidden></div><div class="jt-form-actions"><button class="jt-button" type="button" data-action="cancel-edit">取消</button><button class="jt-button jt-primary" type="button" data-action="save-meeting">保存安排</button></div></form>`;
+  }
+  function formError(message) {$('[data-form-error]').textContent=message;$('[data-form-error]').hidden=false;$('[data-form-error]').scrollIntoView({block:'nearest'});}
+  function saveRecord() {
+    const form=$('[data-record-form]');if(!form?.reportValidity())return;
+    const data=Object.fromEntries(new FormData(form).entries());
+    if(!data.company.trim()||!data.role.trim())return formError('请填写公司和岗位名称。');
+    if(data.submission==='no'&&['applied','assessment','interview','offer','joined'].includes(data.stage))return formError('请补充投递记录，时间不清楚时可选“时间未记”。');
+    if(data.submission!=='no'&&data.stage==='saved')return formError('已投递记录不能同时处于待投递阶段。');
+    if(data.submission==='dated'&&!data.date)return formError('请填写投递日期，或选择时间未记。');
+    if(data.submission==='no'&&selected?.meetings.some(meeting=>['confirmed','done'].includes(meeting.state)))return formError('已有已确认/已完成安排；试用版不支持直接撤销对应投递事实。');
+    const values={company:data.company.trim(),role:data.role.trim(),city:data.city.trim()||'待补充',kind:data.kind.trim()||'待补充',stage:data.stage,submitted:data.submission!=='no',date:data.submission==='dated'?data.date:'',plannedApply:data.plannedApply,deadline:data.deadline,salary:data.salary.trim(),channel:data.channel.trim(),next:data.next.trim(),due:data.due,note:data.note.trim()};
+    if(selected) {
+      const previous=actionFor(selected);
+      const newStep=previous.done&&(values.next!==previous.title||values.due!==previous.due);
+      Object.assign(selected,values);
+      if(newStep){previous.obsolete=true;newAction(selected);}else Object.assign(previous,{title:values.next,due:values.due,obsolete:!values.next});
+      selected.history.unshift(['09-08','更新申请信息（演示）']);
+    } else {
+      selected={...values,id:Math.max(...jobs.map(job=>job.id))+1,salaryNote:'个人期望',meetings:[],history:[['09-08','创建岗位记录（演示）']]};
+      jobs.unshift(selected);newAction(selected);filter='all';search='';$('[data-search]').value='';
+    }
+    proposedStage=null;drawerMode='overview';render();renderDrawer();$('[data-action="close-button"]').focus();notify('演示资料已更新 · 今天的试用卡片同步显示');
+  }
+  function saveMeeting() {
+    const form=$('[data-meeting-form]');if(!form?.reportValidity())return;
+    const data=Object.fromEntries(new FormData(form).entries());
+    if(!data.round.trim())return formError('请填写阶段 / 轮次名称。');
+    if(data.state==='confirmed'&&(!data.date||!data.time))return formError('已确认安排需要日期和时刻；尚未确定时请选择“预计 / 待确认”。');
+    if((['confirmed','done'].includes(data.state)||data.updateStage)&&!selected.submitted)return formError('请先在申请资料中补充投递事实；预计安排可保留且不改变岗位阶段。');
+    const before=selected.meetings.find(meeting=>meeting.id===meetingId);
+    const values={type:data.type,round:data.round.trim(),state:data.state,date:data.date,time:data.time,mode:data.mode.trim(),notes:data.notes.trim()};
+    if(before){const oldText=describeMeeting(before);Object.assign(before,values);selected.history.unshift(['09-08',`调整安排：${oldText} → ${describeMeeting(before)}`]);}
+    else{const meeting={...values,id:`meeting-${selected.id}-${Date.now()}`};selected.meetings.push(meeting);selected.history.unshift(['09-08',`新增安排：${describeMeeting(meeting)}`]);}
+    if(data.updateStage&&data.state!=='cancelled'){
+      const oldStage=selected.stage;selected.stage=data.type==='assessment'?'assessment':'interview';
+      if(oldStage!==selected.stage)selected.history.unshift(['09-08',`手动同步岗位阶段：${stages[oldStage]} → ${stages[selected.stage]}`]);
+    }
+    drawerMode='schedules';meetingId=null;render();renderDrawer();$('[data-action="new-meeting"]').focus();notify('演示安排已更新 · 表格与今天同步显示');
+  }
+  listen(root,'click',event=>{
+    const target=event.target.closest('button,[data-action="close"]');
+    if(!target){
+      const row=event.target.closest('tr[data-row-id]');
+      if(row&&!event.target.closest('input,select,option,a,label,textarea'))openJob(jobs.find(job=>job.id===Number(row.dataset.rowId)));
+      return;
+    }
+    if(target.dataset.menuOp){chooseMenu(target.dataset.menuOp);return;}
+    if(target.dataset.menuJob){openMenu(jobs.find(job=>job.id===Number(target.dataset.menuJob)),target,null,target.dataset.meetingId||null);return;}
+    if(target.dataset.linkedCheck){toggleLinked(target.dataset.linkedCheck);return;}
+    if(target.dataset.filter){filter=target.dataset.filter;render();return;}
+    if(target.dataset.open){openJob(jobs.find(job=>job.id===Number(target.dataset.open)));return;}
+    if(target.dataset.edit){openJob(jobs.find(job=>job.id===Number(target.dataset.edit)),'record');return;}
+    if(target.dataset.scheduleJob){
+      const job=jobs.find(job=>job.id===Number(target.dataset.scheduleJob));
+      if(!$('[data-overlay]').hidden){drawerMode='meeting';meetingId=target.dataset.meetingId||null;renderDrawer();activeForm()?.querySelector('input')?.focus();}
+      else openJob(job,'meeting',target.dataset.meetingId||null);
+      return;
+    }
+    if(target.dataset.join){joinTask(jobs.find(job=>job.id===Number(target.dataset.join)));return;}
+    if(target.dataset.tab){drawerMode=target.dataset.tab;renderDrawer();$(`[data-tab="${drawerMode}"]`).focus();return;}
+    switch(target.dataset.action){
+      case 'new':openJob(null,'record');break;
+      case 'close':case 'close-button':leave(closeNow);break;
+      case 'edit-record':drawerMode='record';renderDrawer();activeForm()?.querySelector('input')?.focus();break;
+      case 'new-meeting':drawerMode='meeting';meetingId=null;renderDrawer();activeForm()?.querySelector('input')?.focus();break;
+      case 'save-record':saveRecord();break;
+      case 'save-meeting':saveMeeting();break;
+      case 'cancel-edit':leave(()=>{if(selected){drawerMode=drawerMode==='meeting'?'schedules':'overview';renderDrawer();$('[data-action="close-button"]').focus();}else closeNow();});break;
+      case 'keep-editing':$('[data-discard-confirm]').hidden=true;pendingLeave=null;activeForm()?.querySelector('input')?.focus();break;
+      case 'discard-edit':{const callback=pendingLeave;pendingLeave=null;$('[data-discard-confirm]').hidden=true;callback?.();break;}
+    }
+  });
+  listen(root,'contextmenu',event=>{
+    if(event.target.closest('input,textarea,select,[data-context-menu]'))return;
+    const context=contextTarget(event.target);if(!context.job||!context.anchor)return;
+    event.preventDefault();openMenu(context.job,context.anchor,{x:event.clientX,y:event.clientY},context.meeting);
+  });
+  listen(document,'pointerdown',event=>{if(!root.contains(event.target)||!event.target.closest('[data-context-menu]'))closeMenu(false);});
+  listen($('.jt-main'),'scroll',()=>closeMenu(false),{passive:true});
+  listen($('[data-drawer-content]'),'scroll',()=>closeMenu(false),{passive:true});
+  listen(root,'input',event=>{if(event.target.matches('[data-search]')){search=event.target.value.trim().toLowerCase();render();}});
+  listen(root,'change',event=>{
+    if(event.target.matches('[data-stage]')){
+      const job=jobs.find(item=>item.id===Number(event.target.dataset.stage)),next=event.target.value;
+      if((!job.submitted&&['applied','assessment','interview','offer','joined'].includes(next))||(job.submitted&&next==='saved')){event.target.value=job.stage;openJob(job,'record',null,next);formError('请同时核对投递情况；不清楚历史日期时可选择“时间未记”。');return;}
+      if(next!==job.stage){job.history.unshift(['09-08',`${stages[job.stage]} → ${stages[next]}（演示修改）`]);job.stage=next;render();$(`[data-stage="${job.id}"]`)?.focus();notify('岗位阶段已更新');}
+    }
+    if(event.target.matches('[data-task-check]')){
+      const action=actions.get(event.target.dataset.taskCheck);if(!sourceIsActive(action))return;
+      action.done=event.target.checked;action.doneAt=action.done?referenceDay:'';
+      const job=jobs.find(item=>item.id===action.jobId);job.history.unshift(['09-08',`${action.done?'完成':'重新打开'}行动：${action.title}（岗位阶段保持${stages[job.stage]}）`]);
+      render();notify(action.done?'行动已完成；招聘阶段保持不变':'行动已重新打开');
+    }
+  });
+  listen(root,'submit',event=>event.preventDefault());
+  listen(root,'keydown',event=>{
+    if(!$('[data-context-menu]').hidden){
+      const controls=[...$('[data-context-menu]').querySelectorAll('button:not(:disabled)')],index=controls.indexOf(document.activeElement);
+      if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?controls.length-1:(index+(event.key==='ArrowDown'?1:-1)+controls.length)%controls.length;controls[next]?.focus();return;}
+      if(event.key==='Escape'||event.key==='Tab'){event.preventDefault();event.stopPropagation();closeMenu(true);return;}
+    }
+    if((event.shiftKey&&event.key==='F10')||event.key==='ContextMenu'){
+      if(event.target.closest('input,textarea,select'))return;
+      const context=contextTarget(event.target);if(context.job&&context.anchor){event.preventDefault();openMenu(context.job,context.anchor,null,context.meeting);}return;
+    }
+    if($('[data-overlay]').hidden)return;
+    if(event.key==='Enter'&&event.target.matches('form input:not([type="checkbox"])')){event.preventDefault();if(drawerMode==='record')saveRecord();else if(drawerMode==='meeting')saveMeeting();return;}
+    if(event.key==='Escape'){event.preventDefault();leave(closeNow);return;}
+    if(event.key==='Tab'){
+      const controls=[...$('.jt-drawer').querySelectorAll('button,input,select,textarea')].filter(element=>!element.disabled&&element.getClientRects().length);
+      const first=controls[0],last=controls[controls.length-1];
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+    }
+  });
+  render();
+  listen(window,'resize',()=>closeMenu(false),{passive:true});
+  listen(document,'scroll',()=>closeMenu(false),{passive:true,capture:true});
+  return {
+    mount(container,mode) {
+      closeNow(false);
+      root.dataset.embedMode=mode;
+      container.append(root);
+      navigate(mode==='card'?'today':'tracker');
+    },
+    detach(container) {
+      if(root.parentNode!==container)return;
+      closeNow(false);
+      clearTimeout(toastTimer);
+      $('[data-toast]').hidden=true;
+      root.remove();
+    },
+    destroy() {
+      clearTimeout(toastTimer);
+      listeners.abort();
+      root.remove();
+      style.remove();
+    }
+  };
+</script>
