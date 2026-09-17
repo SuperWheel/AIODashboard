@@ -1,29 +1,34 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { api } from "../api";
 import type { TaskDayView } from "../types";
-import { taskColor } from "../taskVisual";
 import { toastError } from "./DialogHost";
 
 /**
- * 首页今日任务卡：圆角矩形，主题色从左按比例填充（count/target）；
+ * 首页今日任务卡：统一使用低饱和主题绿，按 count/target 渐进填充；
  * 末尾圆形勾选框——未完成空心，全部完成打钩。点卡片主体 +1；
  * 完成后点圆圈 = 撤销一步；hover 浮现 −（减一次）；标题进详情。
  */
-export default function TodayTaskCard({
+function TodayTaskCard({
   view,
+  dragging,
   onChanged,
   onOpenDetail,
 }: {
   view: TaskDayView;
-  onChanged: () => void;
+  /** 拖拽会话中暂停卡片自身 hover transform，避免与 FLIP 位移动画叠加。 */
+  dragging: boolean;
+  onChanged: (taskId: string) => void;
   onOpenDetail: (taskId: string) => void;
 }) {
   const task = view.task;
-  const accent = taskColor(task.color_hex);
+  const accent = "var(--accent)";
   const target = view.target ?? 0;
   const count = view.count;
   const na = view.state === "not_applicable";
   const done = !na && target > 0 && count >= target;
+  // 完成即归档的一次性任务：当天以完成态留痕（明天起退出），
+  // 主体不可再打卡，仅圆圈可撤销
+  const archived = task.status === "archived";
   const ratio = na || target <= 0 ? 0 : Math.min(1, count / target);
   const [pending, setPending] = useState(false);
 
@@ -32,7 +37,7 @@ export default function TodayTaskCard({
     setPending(true);
     try {
       await fn();
-      onChanged();
+      onChanged(task.id);
     } catch (e) {
       toastError(String(e));
     } finally {
@@ -47,35 +52,41 @@ export default function TodayTaskCard({
       : done
         ? "已完成"
         : "待打卡";
-  const titleColor = done ? "var(--on-accent)" : "var(--ink)";
-  const subColor = done
-    ? "color-mix(in srgb, var(--on-accent) 78%, transparent)"
-    : "var(--ink-3)";
+  const titleColor = done ? "var(--ink-2)" : "var(--ink)";
+  const subColor = done ? accent : "var(--ink-2)";
 
   return (
     <div
-      className={`group relative overflow-hidden rounded-xl border transition-all duration-200 ${
-        na ? "opacity-50" : "cursor-pointer hover:-translate-y-px hover:shadow-md"
+      className={`group relative overflow-hidden rounded-xl border ${
+        na
+          ? "opacity-50"
+          : dragging
+            ? "cursor-grabbing"
+            : archived
+              ? ""
+              : "cursor-pointer transition-all duration-200 hover:-translate-y-px hover:shadow-md"
       }`}
       style={{
-        borderColor: `color-mix(in srgb, ${accent} 26%, var(--line))`,
+        borderColor: done
+          ? `color-mix(in srgb, ${accent} 20%, var(--line))`
+          : "var(--line)",
         background: "var(--surface)",
       }}
       onClick={() => {
-        if (!na) void run(() => api.taskCheckin(task.id));
+        if (!na && !archived) void run(() => api.taskCheckin(task.id));
       }}
-      title={na ? "循环规则今天不适用" : "打卡 +1"}
+      title={na ? "循环规则今天不适用" : archived ? "已完成 · 明天起归入历史" : "打卡 +1"}
     >
       {/* 渐进填充层：从左到右按比例；完成时整卡加深 */}
       <div
         className="absolute inset-y-0 left-0 transition-[width] duration-300"
         style={{
           width: `${ratio * 100}%`,
-          background: `color-mix(in srgb, ${accent} ${done ? 80 : 26}%, transparent)`,
+          background: `color-mix(in srgb, ${accent} ${done ? 16 : 9}%, transparent)`,
         }}
       />
       <div className="relative flex items-center gap-2.5 px-3 py-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm opacity-70 grayscale">
           {task.icon || "✓"}
         </span>
         <button
@@ -93,10 +104,10 @@ export default function TodayTaskCard({
             {sub}
           </div>
         </button>
-        {!na && count > 0 && (
+        {!na && !archived && count > 0 && (
           <button
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs opacity-0 transition-opacity hover:bg-black/10 group-hover:opacity-100"
-            style={{ color: done ? "var(--on-accent)" : "var(--ink-3)" }}
+            style={{ color: "var(--ink-2)" }}
             onClick={(e) => {
               e.stopPropagation();
               void run(() => api.taskDecrement(task.id));
@@ -109,7 +120,7 @@ export default function TodayTaskCard({
         <button
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-[1.5px] text-xs font-bold transition-colors"
           style={{
-            borderColor: done ? accent : `color-mix(in srgb, ${accent} 55%, var(--line))`,
+            borderColor: done ? accent : "var(--ink-3)",
             background: done ? accent : "transparent",
             color: done ? "var(--on-accent)" : "transparent",
           }}
@@ -126,3 +137,5 @@ export default function TodayTaskCard({
     </div>
   );
 }
+
+export default memo(TodayTaskCard);

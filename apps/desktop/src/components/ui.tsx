@@ -157,6 +157,7 @@ export function DatePickerPanel({
   onSelect,
   marks,
   markColor = "var(--accent)",
+  granularity = "day",
 }: {
   /** YYYY-MM-DD */
   value: string;
@@ -164,6 +165,8 @@ export function DatePickerPanel({
   /** 日 → 数量：在该日格子底部渲染色块，颜色深度随数量（相对当月最大计数） */
   marks?: Record<string, number>;
   markColor?: string;
+  /** 初始并提交粒度；月/年选择不会进入更细一级。 */
+  granularity?: "day" | "month" | "year";
 }) {
   const today = localToday();
   const parse = (s: string) => {
@@ -172,7 +175,7 @@ export function DatePickerPanel({
   };
   const init = parse(value || today);
   const cur = parse(today);
-  const [level, setLevel] = useState<"day" | "month" | "year">("day");
+  const [level, setLevel] = useState<"day" | "month" | "year">(granularity);
   const [vy, setVy] = useState(init.y);
   const [vm, setVm] = useState(init.m);
 
@@ -257,8 +260,12 @@ export function DatePickerPanel({
           key={i}
           type="button"
           onClick={() => {
-            setVm(i);
-            setLevel("day");
+            if (granularity === "month") {
+              onSelect(`${vy}-${pad2(i + 1)}-01`);
+            } else {
+              setVm(i);
+              setLevel("day");
+            }
           }}
           className={`${cell} h-8 ${
             vy === init.y && i === init.m
@@ -281,8 +288,12 @@ export function DatePickerPanel({
           key={y}
           type="button"
           onClick={() => {
-            setVy(y);
-            setLevel("month");
+            if (granularity === "year") {
+              onSelect(`${y}-01-01`);
+            } else {
+              setVy(y);
+              setLevel("month");
+            }
           }}
           className={`${cell} h-8 tabular-nums ${
             y === init.y
@@ -330,7 +341,11 @@ export function DatePickerPanel({
       <div className="mt-1.5 flex justify-end border-t border-line pt-1.5">
         <button
           type="button"
-          onClick={() => onSelect(today)}
+          onClick={() =>
+            onSelect(
+              granularity === "year" ? `${today.slice(0, 4)}-01-01` : granularity === "month" ? `${today.slice(0, 7)}-01` : today,
+            )
+          }
           className="rounded-lg px-2 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
         >
           今天

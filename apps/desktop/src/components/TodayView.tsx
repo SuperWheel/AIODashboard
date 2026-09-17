@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { localToday } from "../hooks";
 import type { GlobalYearHeatmap, LibraryListItem, TaskDayView, TodayContext } from "../types";
@@ -23,6 +23,74 @@ function libraryDayText(it: LibraryListItem): { text: string; overdue: boolean }
     default:
       return { text: `已过 ${it.day_info.day_count} 天`, overdue: true };
   }
+}
+
+/**
+ * 把拖拽预览状态限制在任务网格内；移动占位时不再重渲染首页热力图和右侧卡片。
+ */
+function DraggableTodayTaskGrid({
+  tasks,
+  onChanged,
+  onTaskAction,
+  onOpenTask,
+  onReordered,
+}: {
+  tasks: TaskDayView[];
+  onChanged: () => void;
+  onTaskAction: (taskId: string) => void;
+  onOpenTask: (taskId: string) => void;
+  onReordered: (ids: string[]) => void;
+}) {
+  const {
+    preview,
+    ghostH,
+    dragging,
+    order,
+    wrapperProps,
+    placeholderProps,
+    dropZoneProps,
+    isDragging,
+    flipRegister,
+  } = useTaskDnd(
+    () => tasks.map((v) => v.task),
+    onChanged,
+    onReordered,
+  );
+  const shownTasks = useMemo(
+    () => order(tasks),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasks, preview],
+  );
+
+  return (
+    <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2" {...dropZoneProps}>
+      {shownTasks.map((v) =>
+        isDragging(v.task.id) ? (
+          <div
+            key={`today-dnd-placeholder-${v.task.id}`}
+            {...placeholderProps(v.task.id)}
+          >
+            <div
+              className="rounded-xl border border-line bg-hover"
+              style={{ height: ghostH }}
+            />
+          </div>
+        ) : (
+          <div key={v.task.id} {...wrapperProps(v.task.id)}>
+            {/* 命中外层保持静止，只有视觉内层参与 FLIP。 */}
+            <div ref={flipRegister(v.task.id)}>
+              <TodayTaskCard
+                view={v}
+                dragging={dragging}
+                onChanged={onTaskAction}
+                onOpenDetail={onOpenTask}
+              />
+            </div>
+          </div>
+        ),
+      )}
+    </div>
+  );
 }
 
 /**
@@ -149,23 +217,15 @@ export default function TodayView({
     return [...out, ...byId.values()];
   }, [todayTasks, pin]);
 
-  const afterAction = (taskId: string) => {
-    setLastActionTask(taskId);
-    onChanged();
-  };
-
-  // 今日卡拖拽（006 v2 共享 hook）：实时重排预览 + 淡色占位块 + FLIP 动画；
-  // 提交成功后把新序列写回位置快照（pin），会话内顺序即所拖
-  const { preview, ghostH, order, wrapperProps, isDragging, flipRegister } = useTaskDnd(
-    () => displayTasks.map((v) => v.task),
-    onChanged,
-    (ids) => setPin(ids),
+  const afterAction = useCallback(
+    (taskId: string) => {
+      setLastActionTask(taskId);
+      onChanged();
+    },
+    [onChanged],
   );
-  const shownTasks = useMemo(
-    () => order(displayTasks),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [displayTasks, preview],
-  );
+  const openTask = useCallback((taskId: string) => onNav("tasks", taskId), [onNav]);
+  const keepPreviewOrder = useCallback((ids: string[]) => setPin(ids), []);
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -391,29 +451,13 @@ export default function TodayView({
             />
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
-            {shownTasks.map((v) => (
-              <div
-                key={v.task.id}
-                ref={flipRegister(v.task.id)}
-                {...wrapperProps(v.task.id)}
-              >
-                {isDragging(v.task.id) ? (
-                  // 被拖卡 = 同形状淡色圆角矩形占位块（即落点标记）
-                  <div
-                    className="rounded-xl border border-line bg-hover"
-                    style={{ height: ghostH }}
-                  />
-                ) : (
-                  <TodayTaskCard
-                    view={v}
-                    onChanged={() => afterAction(v.task.id)}
-                    onOpenDetail={(id) => onNav("tasks", id)}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+          <DraggableTodayTaskGrid
+            tasks={displayTasks}
+            onChanged={onChanged}
+            onTaskAction={afterAction}
+            onOpenTask={openTask}
+            onReordered={keepPreviewOrder}
+          />
         )}
       </Card>
 

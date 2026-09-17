@@ -102,7 +102,8 @@ function DayNavigator({ day, onChange }: { day: string; onChange: (d: string) =>
 const CARD_HEIGHT_EST: Record<CardStyle, number> = {
   day: 76,
   week: 118,
-  month: 150,
+  // 月卡 = 11 列流水热力网格（~41px 格 × 3 行 + 末行淡色补位）
+  month: 240,
   year: 670,
 };
 
@@ -212,11 +213,32 @@ export default function TasksView({
   // 与打卡状态解耦（完成不移动卡片）；拖拽落位只改 sort_order/星级。
   const wallViews = useMemo(() => views, [views]);
 
-  // 拖拽排序（006 v2）：实时重排预览 + 淡色占位块 + FLIP 让位动画；
+  // 拖拽排序（006 v4）：Pointer Events + 独立浮层 + 淡色占位 + FLIP；
   // 拖的是发牌序列（均衡发牌算法不变），不是列。
-  const { preview, ghostH, order, wrapperProps, isDragging, flipRegister } = useTaskDnd(
+  const keepPreviewOrder = useCallback((ids: string[]) => {
+    setViews((current) => {
+      const byId = new Map(current.map((v) => [v.task.id, v]));
+      const ordered = ids
+        .map((id) => byId.get(id))
+        .filter((v): v is TaskDayView => v !== undefined);
+      for (const id of ids) byId.delete(id);
+      return [...ordered, ...byId.values()];
+    });
+  }, []);
+  const {
+    preview,
+    ghostH,
+    dragging,
+    order,
+    wrapperProps,
+    placeholderProps,
+    dropZoneProps,
+    isDragging,
+    flipRegister,
+  } = useTaskDnd(
     () => wallViews.map((v) => v.task),
     onChanged,
+    keepPreviewOrder,
   );
   // 拖拽中按预览序列渲染（memo 化：预览/墙数据不变则不发牌）
   const displayViews = useMemo(
@@ -240,7 +262,6 @@ export default function TasksView({
     () => dealColumns(displayViews, twoCols ? 2 : 1, heightFor),
     [displayViews, twoCols, heightFor],
   );
-
   // navParam 以 tsk_ 开头 → 任务详情
   const detailId = navParam?.startsWith("tsk_") ? navParam : null;
 
@@ -263,10 +284,11 @@ export default function TasksView({
     if (navParam === "active") setTab("active");
   }, [navParam]);
 
-  const openEditor = (task: Task | null) => {
+  const openEditor = useCallback((task: Task | null) => {
     setEditing(task);
     setEditorOpen(true);
-  };
+  }, []);
+  const openTask = useCallback((id: string) => onNav("tasks", id), [onNav]);
 
   // 归档页派生：各归档日的任务数（日期面板色块标记用）
   const archDayCounts = useMemo(() => {
@@ -349,29 +371,41 @@ export default function TasksView({
     );
   };
 
-  const renderCard = (v: TaskDayView) => (
-    <div key={v.task.id} ref={flipRegister(v.task.id)} {...wrapperProps(v.task.id)}>
-      {isDragging(v.task.id) ? (
-        // 被拖卡 = 同形状淡色圆角矩形占位块（即落点标记）
-        <div
-          className="rounded-2xl border border-line bg-hover"
-          style={{ height: ghostH }}
-        />
-      ) : (
-        <MeasuredCard id={v.task.id} onHeight={reportHeight}>
-          <TaskCard
-            view={v}
-            refreshKey={refreshKey}
-            onChanged={onChanged}
-            onOpenDetail={(id) => onNav("tasks", id)}
-            onEdit={openEditor}
-            anchorDay={day}
-            interactive={isToday}
+  const renderCard = (v: TaskDayView) => {
+    const placeholder = isDragging(v.task.id);
+    return (
+      <div
+        key={placeholder ? `task-dnd-placeholder-${v.task.id}` : v.task.id}
+        {...(placeholder
+          ? placeholderProps(v.task.id)
+          : wrapperProps(v.task.id))}
+      >
+        {placeholder ? (
+          // 只有经过有效目标后才出现；原位置不会保留这一块。
+          <div
+            className="rounded-2xl border border-line bg-hover"
+            style={{ height: ghostH }}
           />
-        </MeasuredCard>
-      )}
-    </div>
-  );
+        ) : (
+          // 外层只负责命中，FLIP transform 放到内层，动画不再改变落点几何。
+          <div ref={flipRegister(v.task.id)}>
+            <MeasuredCard id={v.task.id} onHeight={reportHeight}>
+              <TaskCard
+                view={v}
+                dragging={dragging}
+                refreshKey={refreshKey}
+                onChanged={onChanged}
+                onOpenDetail={openTask}
+                onEdit={openEditor}
+                anchorDay={day}
+                interactive={isToday}
+              />
+            </MeasuredCard>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (detailId) {
     const task = views.find((v) => v.task.id === detailId)?.task ?? archived.find((t) => t.id === detailId);
@@ -459,7 +493,10 @@ export default function TasksView({
             />
           </div>
         ) : wallMode === "smart" ? (
-          <div className="mt-4 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+          <div
+            className="mt-4 grid grid-cols-1 items-start gap-4 xl:grid-cols-2"
+            {...dropZoneProps}
+          >
             {columns.map((col, i) => (
               <div key={i} className="flex flex-col gap-4">
                 {col.map((v) => renderCard(v))}
@@ -467,20 +504,23 @@ export default function TasksView({
             ))}
           </div>
         ) : (
-          STYLE_SECTIONS.map((s) => {
-            const items = displayViews.filter((v) => v.task.card_style === s.key);
-            if (items.length === 0) return null;
-            return (
-              <div key={s.key} className="mt-5 first:mt-4">
-                <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink3">
-                  {s.label} · {items.length}
+          <div {...dropZoneProps}>
+            {STYLE_SECTIONS.map((s) => {
+              const items = displayViews.filter((v) => v.task.card_style === s.key);
+              if (items.length === 0) return null;
+              const sectionCount = wallViews.filter((v) => v.task.card_style === s.key).length;
+              return (
+                <div key={s.key} className="mt-5 first:mt-4">
+                  <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink3">
+                    {s.label} · {sectionCount}
+                  </div>
+                  <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+                    {items.map((v) => renderCard(v))}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-                  {items.map((v) => renderCard(v))}
-                </div>
-              </div>
-            );
-          })
+              );
+            })}
+          </div>
         ))}
 
       {tab === "archived" && (

@@ -17,4 +17,9 @@
 - [x] protocol v5 + CLI --priority
 - [x] Tauri：update_task 参数 + move_task_position command
 - [x] 前端：types/api + TaskEditor 星级行 + TaskCard 星级显示/⋯ 菜单 + 墙 DnD（指示线 + 跨档确认框）
-- [x] check.sh 全绿 + dev-log
+- [x] 拖拽交互 v3：起拖原位腾空 + 目标占位 + FLIP 让位 + 预览序列原位提交；纯函数测试覆盖索引逻辑（已由 v4 取代：隐藏 source 实际被 React 重挂载，WKWebView 会取消拖拽）
+- [x] 拖拽交互 v4：Pointer Events + document 稳定事件链 + DOM DragOverlay；墙外/Esc/失焦取消；目标档内邻居提交；隔离数据库实拖覆盖首页、均衡混排、类型分区和墙外释放
+- [x] 拖拽稳定 v4.1：稳定布局命中 + 双列优先 + 中线迟滞 + 6px 重排再武装 + 每帧一次预览；连续 FLIP 从当前视觉位置衔接
+- [x] 拖拽稳定 v4.2：浮层清除继承动画并改为相对位移；命中/FLIP 分层；首页网格隔离渲染；任务卡 memo + 可中断预览更新
+- [x] 拖拽稳定 v4.3：FLIP 快照后同步提交预览；拖拽期间暂停非拖动卡的 hover 位移，消除让位闪烁/跳跃
+- [x] 拖拽稳定 v4.4：可取消 WAAPI 动画从当前视觉位置接续；仅重启动过的卡片；首格优先占位 + 当前槽稳定区 + 10px 目标再武装

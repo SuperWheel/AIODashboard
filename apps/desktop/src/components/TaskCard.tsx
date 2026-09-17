@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { PeriodOverview, Task, TaskDayView } from "../types";
 import { isPrevYear, recurrenceLabel, taskColor } from "../taskVisual";
-import { HeatmapCell, YearHeatmap } from "./Heatmap";
+import { HeatmapCell, MonthHeatmapGrid, YearHeatmap } from "./Heatmap";
 import { toastError } from "./DialogHost";
 
 /** 任务色进度圆环（打卡进度；完成率封顶 100%）。 */
@@ -139,6 +139,32 @@ export function CheckinControls({
         color={accent}
         size={ringSize}
         title="只能今天打卡"
+      >
+        {target > 1 ? (
+          <span className="text-[10px] font-semibold tabular-nums text-ink">
+            {count}/{target}
+          </span>
+        ) : done ? (
+          <span className="text-sm font-bold" style={{ color: accent }}>
+            ✓
+          </span>
+        ) : (
+          <span className="text-xs text-ink3">○</span>
+        )}
+      </TaskRing>
+    );
+  }
+
+  // 完成即归档的一次性任务当天留痕卡：只读进度环 + 完成态可点击撤销
+  // （主体不再 +1，否则 core 会报「任务已归档」）
+  if (view.task.status === "archived") {
+    return (
+      <TaskRing
+        value={done ? 1 : target > 0 ? count / target : 0}
+        color={accent}
+        size={ringSize}
+        onClick={done ? () => run(() => api.taskUndo(view.task.id)) : undefined}
+        title={done ? "撤销完成" : "已归档"}
       >
         {target > 1 ? (
           <span className="text-[10px] font-semibold tabular-nums text-ink">
@@ -334,8 +360,9 @@ function subtitleFor(view: TaskDayView, ov: PeriodOverview | null, dayWord = "�
  * 任务卡片：日/周/月/年四模式共用 header；周/月/年懒加载对应周期总览。
  * anchorDay：日期翻页时锚定周期总览到所选日；interactive=false 时打卡只读。
  */
-export default function TaskCard({
+function TaskCard({
   view,
+  dragging = false,
   refreshKey,
   onChanged,
   onOpenDetail,
@@ -344,6 +371,8 @@ export default function TaskCard({
   interactive = true,
 }: {
   view: TaskDayView;
+  /** 拖拽会话中暂停卡片自身 hover transform，避免与 FLIP 位移动画叠加。 */
+  dragging?: boolean;
   refreshKey: number;
   onChanged: () => void;
   onOpenDetail: (taskId: string) => void;
@@ -377,7 +406,9 @@ export default function TaskCard({
     <div
       // 菜单打开时整卡提升层级：卡片之间互为兄弟节点，仅靠菜单自身的
       // z-index 压不过 DOM 靠后的相邻卡片，会被遮挡
-      className={`group relative rounded-2xl border bg-surface p-4 shadow-card transition-all duration-150 hover:-translate-y-px hover:shadow-lg ${
+      className={`group relative rounded-2xl border bg-surface p-4 shadow-card ${
+        dragging ? "cursor-grabbing" : "transition-all duration-150 hover:-translate-y-px hover:shadow-lg"
+      } ${
         menuOpen ? "z-30" : ""
       }`}
       style={{ borderColor: `color-mix(in srgb, ${accent} 22%, var(--line))` }}
@@ -458,21 +489,13 @@ export default function TaskCard({
       )}
       {style === "month" && ov && (
         <button className="mt-3 block w-full" onClick={() => onOpenDetail(task.id)}>
-          <div className="grid grid-cols-11 gap-[5px]">
-            {ov.days.map((d) => (
-              <HeatmapCell
-                key={d.logical_day}
-                state={d.display_state}
-                rate={d.capped_rate}
-                color={accent}
-                size={14}
-                fluid
-                isToday={d.is_today}
-                prevYear={isPrevYear(d.logical_day)}
-                title={d.logical_day}
-              />
-            ))}
-          </div>
+          {/* 月卡 = 多列流水热力网格（与详情页月视图同构，无文字） */}
+          <MonthHeatmapGrid
+            days={ov.days}
+            color={accent}
+            gap={5}
+            dayTitle={(d) => d.logical_day}
+          />
         </button>
       )}
       {style === "year" && ov && (
@@ -489,3 +512,5 @@ export default function TaskCard({
     </div>
   );
 }
+
+export default memo(TaskCard);
