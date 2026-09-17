@@ -14,7 +14,7 @@ Plan 级任务（新增 CLI 子命令 / 新增视图 / 单个 command / 跨步�
 
 | 文档 | 状态 | 提出日期 | 摘要 |
 |---|---|---|---|
-| [2026-09-17-v0.1-release.md](2026-09-17-v0.1-release.md) | 进行中 | 2026-09-17 | 首次公开发行、macOS 包与 CLI、README 和 GitHub Pages 展示 |
+| [2026-09-17-v0.1-release.md](2026-09-17-v0.1-release.md) | 已完成 | 2026-09-17 | 首次公开发行、macOS 包与 CLI、README 和 GitHub Pages 展示 |
 | [2026-09-08-job-tracker-ui-trial.md](2026-09-08-job-tracker-ui-trial.md) | 已完成 | 2026-09-08 | 独立求职台界面试用插件，已导入新版桌面程序；演示数据、真实 View/Today 卡片，不写入真实任务 |
 | [2026-09-08-plugin-import-entry.md](2026-09-08-plugin-import-entry.md) | 已完成 | 2026-09-08 | 插件页统一导入 ZIP / 文件夹，预检信息、确认替换、默认停用与审阅启用，复用 Core 安装能力 |
 | [2026-09-02-once-task-linger-history.md](2026-09-02-once-task-linger-history.md) | 已完成 | 2026-09-02 | 一次性任务完成当天留痕 + 任务墙历史翻页可见归档任务 + 当天 undo 自动解除归档（修订 004 可见性语义） |

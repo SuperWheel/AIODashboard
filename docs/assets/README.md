@@ -2,6 +2,7 @@
 
 - `cover.png`：内置 imagegen 生成的品牌概念图，不是软件截图。
 - `today-light.jpg` / `today-dark.jpg` / `tasks-light.jpg`：v0.1.0 release 可执行程序的真实界面，独立临时演示数据库；不含个人任务，不预装插件。预览副本仅改应用标识与名称，以与日常使用实例区分。
+- `social-preview.jpg`：同一品牌封面的 JPEG 编码版本，符合 GitHub 社交预览小于 1 MB 的上传限制。
 - `favicon.svg`：项目宣传页的简洁字母标识。
 
 ## 品牌图提示词

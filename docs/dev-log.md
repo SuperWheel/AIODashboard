@@ -787,3 +787,14 @@ async 函数里（错误沦为静默 rejection）。教训：**协议文档、�
 **素材与数据边界**：截图使用临时演示数据库、插件目录、快照路径；直接启动 release 可执行程序的预览副本，副本仅修改应用标识/名称以与正式实例区分，可执行文件字节相同。未将用户正式数据用于展示。此前为临时演示启用的番茄钟已停用并移出临时插件目录。封面使用内置 imagegen，提示词与素材说明见 assets/README.md。
 
 **发行边界**：本次二进制仅 Apple Silicon macOS，ad-hoc 签名、未 Developer ID 分发签名或公证；无内置大模型、自动更新、云同步或原生 WidgetKit。发布与线上核验结果在后续记录中补齐。
+
+
+### v0.1.0 发布验收结果
+
+- 源码与标签：`v0.1.0` → `14fa28e71beaed06cb14a0a5331c44b4440565bd`，已推送 main 与远端标签；仓库按用户明确要求改为 public。
+- [Release](https://github.com/SuperWheel/AIODashboard/releases/tag/v0.1.0) 已公开，包含最终 arm64 DMG、CLI tar.gz 与 SHA256SUMS.txt。回下载后两个二进制校验均通过，DMG hdiutil 校验通过，app 不含数据库或预装插件。
+- DMG SHA-256：`3e500c1700fa8add3f11016d68db0761d8a779c93ac7e3caa9ee17aad09f766c`。
+- CLI SHA-256：`e91c30b9999585331e442418b48b4107a6bb6f335faf231f98c3f552abbeb484`。
+- [GitHub CI](https://github.com/SuperWheel/AIODashboard/actions/runs/35220870384) 全部通过；[Pages 部署](https://github.com/SuperWheel/AIODashboard/actions/runs/35220970226) 成功。
+- [项目主页](https://superwheel.github.io/AIODashboard/) 已上线；桌面与 390px 手机宽度检查通过，三种预览切换正常；GitHub README 四张图片成功加载。简介、主题标签、主页地址、自定义社交封面已设置并回读验证。
+- 临时桌面预览实例已退出，日常使用的应用与个人数据未安装或替换。最终文档归档提交不改变已发布二进制，标签保持不动。
