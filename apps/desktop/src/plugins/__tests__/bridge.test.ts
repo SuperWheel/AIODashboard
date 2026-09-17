@@ -1,143 +1,121 @@
-// T10：API 桥的权限执行——network 白名单、events 声明、KV 命名空间锁定、actor 归因。
-
-import { describe, expect, it, vi } from "vitest";
-import { createPluginApi, type PluginDeps } from "../bridge";
-import { CronRegistry } from "../crons";
-import { EventBus } from "../events";
+import { describe, it, expect, vi } from "vitest";
+import { createPluginApi } from "../bridge";
 import { ModuleRegistry } from "../registry";
+import { EventBus } from "../events";
+import { CronRegistry } from "../crons";
 import type { PluginManifest } from "../types";
-
-// 桩掉后端 api：只记录调用，断言 actor 与命名空间参数
-vi.mock("../../api", () => ({
-  api: {
-    getToday: vi.fn(async () => ({ date: "2026-08-30" })),
-    listTasks: vi.fn(async () => []),
-    createTaskAs: vi.fn(async (_actor: string, title: string) => ({ title })),
-    checkinAs: vi.fn(async () => ({})),
-    archiveTask: vi.fn(async () => ({})),
-    deleteTaskAs: vi.fn(async () => undefined),
-    searchAll: vi.fn(async () => ({ total: 0, hits: [] })),
-    addInboxItemAs: vi.fn(async () => ({})),
-    createNoteAs: vi.fn(async () => ({})),
-    pluginKvGet: vi.fn(async (pluginId: string, key: string) => ({ pluginId, key })),
-    pluginKvSet: vi.fn(async () => undefined),
-    pluginKvDelete: vi.fn(async () => true),
-    pluginKvList: vi.fn(async (pluginId: string) => [{ key: `${pluginId}/k`, value: "v" }]),
-    pluginHttpFetch: vi.fn(async () => ({ status: 200, text: "{}", json: {} })),
-  },
-}));
-import { api as coreApi } from "../../api";
-
-const manifest = (perms: PluginManifest["permissions"]): PluginManifest => ({
-  id: "com.test.echo",
-  name: "Echo",
-  version: "0.1.0",
-  entry: "main.js",
-  permissions: perms,
-});
-
-function makeDeps(): PluginDeps & { registry: ModuleRegistry; events: EventBus; crons: CronRegistry } {
+import { Lifecycle } from "../../../../../packages/plugin-sdk/src/index";
+vi.mock("../../api", () => ({ api: { pluginCall: vi.fn(async () => null) } }));
+import { api } from "../../api";
+function setup(perms: PluginManifest["permissions"] = {}) {
+  const registry = new ModuleRegistry(),
+    events = new EventBus(),
+    crons = new CronRegistry(),
+    life = new Lifecycle();
+  const manifest: PluginManifest = {
+    id: "com.test.p",
+    name: "P",
+    version: "1.0.0",
+    entry: "main.js",
+    api_version: "plugin.protocol/v2",
+    permissions: perms,
+    contributions: {
+      commands: [{ id: "c", title: "C" }],
+      today_cards: [{ id: "card" }],
+      views: [{ id: "v", title: "V" }],
+    },
+  };
   return {
-    registry: new ModuleRegistry(),
-    events: new EventBus(),
-    crons: new CronRegistry(),
-    onChanged: () => {},
+    registry,
+    events,
+    crons,
+    life,
+    api: createPluginApi(
+      manifest.id,
+      "test-token",
+      manifest,
+      { registry, events, crons, onChanged: () => {} },
+      life,
+    ),
   };
 }
-
-describe("API 桥权限执行", () => {
-  it("T10: fetch 未声明 host 拒绝（本地判定，不发起请求）", async () => {
-    const deps = makeDeps();
-    const apiObj = createPluginApi("com.test.echo", manifest({ network: ["api.github.com"] }), deps);
-
-    await expect(apiObj.fetch("https://evil.com/x")).rejects.toThrow(/network 权限/);
-    expect(coreApi.pluginHttpFetch).not.toHaveBeenCalled();
-
-    await expect(apiObj.fetch("https://api.github.com/x")).resolves.toMatchObject({ status: 200 });
-  });
-
-  it("T10: events 订阅需 manifest 声明；panel.* 无需声明", () => {
-    const deps = makeDeps();
-    const apiObj = createPluginApi("com.test.echo", manifest({ events: ["task.completed"] }), deps);
-
-    expect(() => apiObj.events.on("task.completed", () => {})).not.toThrow();
-    expect(() => apiObj.events.on("task.created", () => {})).toThrow(/events 权限/);
-    expect(() => apiObj.events.on("panel.refresh", () => {})).not.toThrow();
-  });
-
-  it("T10: KV 一律锁定本插件命名空间", async () => {
-    const deps = makeDeps();
-    const apiObj = createPluginApi("com.test.echo", manifest({}), deps);
-
-    await apiObj.storage.kv.set("counter", "1");
-    expect(coreApi.pluginKvSet).toHaveBeenCalledWith("com.test.echo", "counter", "1");
-
-    await apiObj.storage.kv.get("counter");
-    expect(coreApi.pluginKvGet).toHaveBeenCalledWith("com.test.echo", "counter");
-
-    // 公开协议 = storage.kv.*（对齐 PLUGIN_API.md）；桥不暴露任何能改 pluginId 的口子
-    expect(Object.keys(apiObj.storage)).toEqual(["kv"]);
-    expect(Object.keys(apiObj.storage.kv).sort()).toEqual(["delete", "get", "list", "set"]);
-  });
-
-  it("领域写入带 actor=plugin:<id>（审计归因）", async () => {
-    const deps = makeDeps();
-    const apiObj = createPluginApi("com.test.echo", manifest({}), deps);
-
-    await apiObj.core.createTask("插件创建的任务");
-    expect(coreApi.createTaskAs).toHaveBeenCalledWith(
-      "plugin:com.test.echo",
-      "插件创建的任务",
-      undefined,
-    );
-  });
-
-  it("贡献点注册进 registry 且带插件前缀（冲突会抛错）", () => {
-    const deps = makeDeps();
-    const apiObj = createPluginApi("com.test.echo", manifest({}), deps);
-
-    const FakeComponent = () => null;
-    apiObj.ui.registerTodayCard({ id: "card", title: "Echo", component: FakeComponent });
-    expect(deps.registry.cards.map((c) => c.id)).toEqual(["com.test.echo.card"]);
-
+describe("真实宿主桥与共享 SDK 权限", () => {
+  it("空权限拒绝写入、today、KV 和 UI", async () => {
+    const s = setup();
+    await expect(s.api.core.createTask("x")).rejects.toMatchObject({
+      code: "permission_denied",
+    });
+    await expect(s.api.core.today()).rejects.toThrow();
+    await expect(s.api.storage.kv.get("x")).rejects.toThrow();
     expect(() =>
-      apiObj.ui.registerTodayCard({ id: "card", title: "Echo", component: FakeComponent }),
-    ).toThrow(/冲突/);
+      s.api.ui.registerCommand({ id: "c", title: "C", handler: () => {} }),
+    ).toThrow();
   });
-
-  it("Today 卡片 size 透传进 registry；非法 size 拒绝注册", () => {
-    const deps = makeDeps();
-    const apiObj = createPluginApi("com.test.echo", manifest({}), deps);
-
-    const FakeComponent = () => null;
-    apiObj.ui.registerTodayCard({ id: "a", title: "A", size: "sm", component: FakeComponent });
-    apiObj.ui.registerTodayCard({ id: "b", title: "B", component: FakeComponent });
-    expect(deps.registry.cards.map((c) => c.size)).toEqual(["sm", undefined]);
-
+  it("传递 token，不能传 actor 或他人 plugin_id", async () => {
+    vi.clearAllMocks();
+    const s = setup({ core: ["task.write"], storage_quota_bytes: 100 });
+    await s.api.core.createTask("x");
+    expect(api.pluginCall).toHaveBeenCalledWith("test-token", "create_task", {
+      title: "x",
+      target: undefined,
+    });
+    await s.api.storage.kv.set("k", "v");
+    expect(api.pluginCall).toHaveBeenCalledWith("test-token", "kv_set", {
+      key: "k",
+      value: "v",
+    });
+  });
+  it("UI 权限与贡献声明均检查，disposer 幂等", () => {
+    const s = setup({ ui: ["command", "today_card", "view"] });
+    const off = s.api.ui.registerCommand({
+      id: "c",
+      title: "C",
+      handler: () => {},
+    });
+    expect(s.registry.commands).toHaveLength(1);
     expect(() =>
-      apiObj.ui.registerTodayCard({
-        id: "c",
-        title: "C",
-        // @ts-expect-error 运行时校验：绕过类型声明的非法值
-        size: "xl",
-        component: FakeComponent,
-      }),
-    ).toThrow(/size 非法/);
-    expect(deps.registry.cards.map((c) => c.id)).not.toContain("com.test.echo.c");
+      s.api.ui.registerCommand({ id: "other", title: "X", handler: () => {} }),
+    ).toThrow();
+    off();
+    off();
+    expect(s.registry.commands).toHaveLength(0);
+    s.api.ui.registerTodayCard({
+      id: "card",
+      title: "C",
+      size: "sm",
+      component: () => null,
+    });
+    expect(s.registry.cards[0].size).toBe("sm");
+    s.life.dispose();
+    expect(s.registry.cards).toHaveLength(0);
   });
-
-  it("registerCron 需要 manifest 声明该表达式；声明后进入 cron 注册表", () => {
-    const deps = makeDeps();
-    const apiObj = createPluginApi(
-      "com.test.echo",
-      manifest({ cron: ["*/1 * * * *"] }),
-      deps,
-    );
-
-    expect(() => apiObj.registerCron("0 9 * * *", () => {})).toThrow(/cron 权限/);
-    expect(deps.crons.size).toBe(0);
-
-    apiObj.registerCron("*/1 * * * *", () => {});
-    expect(deps.crons.size).toBe(1);
+  it("事件不能伪造领域事实或跨命名空间监听", () => {
+    const s = setup({ events: ["task.created"] });
+    const f = vi.fn();
+    s.api.events.on("task.created", f);
+    s.events.emit("task.created", 1);
+    expect(f).toHaveBeenCalledWith(1);
+    expect(() => s.api.events.emit("task.created", {})).toThrow();
+    expect(() =>
+      s.api.events.on("plugin.com.test.p.child:secret", f),
+    ).toThrow();
+    const off = s.api.events.on("plugin.com.test.p:local", f);
+    s.api.events.emit("plugin.com.test.p:local", 2);
+    expect(f).toHaveBeenCalledWith(2);
+    off();
+    s.life.dispose();
+    expect(() => s.api.events.on("panel.refresh", f)).toThrow();
+  });
+  it("停用撤销旧命令和 cron 回调", () => {
+    const s = setup({ ui: ["command"], cron: ["* * * * *"] });
+    const f = vi.fn();
+    s.api.ui.registerCommand({ id: "c", title: "C", handler: f });
+    const command = s.registry.commands[0];
+    s.api.registerCron("* * * * *", f);
+    s.life.dispose();
+    void command.handler();
+    s.crons.dispatch({ plugin_id: "com.test.p", expr: "* * * * *" });
+    expect(f).not.toHaveBeenCalled();
+    expect(s.crons.size).toBe(0);
   });
 });

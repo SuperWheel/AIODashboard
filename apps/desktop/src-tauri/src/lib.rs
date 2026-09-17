@@ -4,12 +4,13 @@
 //! 与 CLI 平级：GUI 创建的任务 = CLI 创建的任务。
 
 pub mod plugin_cron;
+mod plugin_import;
 
 use dashboard_core as core;
 use dashboard_domain::{Actor, Note, Project, Task};
 use dashboard_storage as storage;
 use rusqlite::Connection;
-use tauri::Manager;
+use tauri::{Manager, State};
 
 type R<T> = Result<T, String>;
 
@@ -21,11 +22,14 @@ fn actor() -> Actor {
     Actor::User
 }
 
-/// 可选 actor 参数：普通前端调用不传（= User）；插件桥传 `plugin:<id>`（审计归因）。
-fn actor_from(actor: Option<String>) -> Actor {
-    match actor {
-        Some(a) => Actor::parse(&a).unwrap_or(Actor::User),
-        None => Actor::User,
+/// GUI 只能标记 User；插件身份由独立 token 入口在 Core 中派生。
+fn actor_from(actor: Option<String>) -> R<Actor> {
+    match actor.as_deref() {
+        None => Ok(Actor::User),
+        Some("user") => Ok(Actor::User),
+        Some(a) => Err(format!(
+            "非法 actor '{a}'：插件及其他来源只能通过受控上下文调用"
+        )),
     }
 }
 
@@ -145,7 +149,8 @@ fn create_task(params: CreateTaskParams) -> R<Task> {
     if let Some(p) = params.priority {
         input.priority = p;
     }
-    core::task_service::create_task(&c, &input, actor_from(params.actor)).map_err(|e| e.to_string())
+    core::task_service::create_task(&c, &input, actor_from(params.actor)?)
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -197,7 +202,7 @@ fn update_task(params: UpdateTaskParams) -> R<Task> {
         project_id,
         priority: params.priority,
     };
-    core::task_service::update_task(&c, &params.id, &input, actor_from(params.actor))
+    core::task_service::update_task(&c, &params.id, &input, actor_from(params.actor)?)
         .map_err(|e| e.to_string())
 }
 
@@ -218,7 +223,7 @@ fn move_task_position(
         priority,
         before_id.as_deref(),
         after_id.as_deref(),
-        actor_from(actor),
+        actor_from(actor)?,
     )
     .map_err(|e| e.to_string())
 }
@@ -226,19 +231,19 @@ fn move_task_position(
 #[tauri::command]
 fn archive_task(id: String, actor: Option<String>) -> R<Task> {
     let c = conn()?;
-    core::task_service::archive_task(&c, &id, actor_from(actor)).map_err(|e| e.to_string())
+    core::task_service::archive_task(&c, &id, actor_from(actor)?).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn restore_task(id: String, actor: Option<String>) -> R<Task> {
     let c = conn()?;
-    core::task_service::restore_task(&c, &id, actor_from(actor)).map_err(|e| e.to_string())
+    core::task_service::restore_task(&c, &id, actor_from(actor)?).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_task(id: String, actor: Option<String>) -> R<()> {
     let c = conn()?;
-    core::task_service::delete_task(&c, &id, false, actor_from(actor))
+    core::task_service::delete_task(&c, &id, false, actor_from(actor)?)
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
@@ -253,7 +258,7 @@ fn task_checkin(
 ) -> R<core::checkin_service::TaskDayView> {
     let op = operation_id.unwrap_or_else(|| dashboard_domain::new_id("op"));
     let c = conn()?;
-    core::checkin_service::record(&c, &id, &op, actor_from(actor)).map_err(|e| e.to_string())
+    core::checkin_service::record(&c, &id, &op, actor_from(actor)?).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -264,7 +269,7 @@ fn task_decrement(
 ) -> R<core::checkin_service::TaskDayView> {
     let op = operation_id.unwrap_or_else(|| dashboard_domain::new_id("op"));
     let c = conn()?;
-    core::checkin_service::decrement(&c, &id, &op, actor_from(actor)).map_err(|e| e.to_string())
+    core::checkin_service::decrement(&c, &id, &op, actor_from(actor)?).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -275,7 +280,7 @@ fn task_undo(
 ) -> R<core::checkin_service::TaskDayView> {
     let op = operation_id.unwrap_or_else(|| dashboard_domain::new_id("op"));
     let c = conn()?;
-    core::checkin_service::undo(&c, &id, &op, actor_from(actor)).map_err(|e| e.to_string())
+    core::checkin_service::undo(&c, &id, &op, actor_from(actor)?).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -321,7 +326,7 @@ fn create_library(
         kind: k,
         anchor_day,
     };
-    core::library_service::create_library(&c, &input, actor_from(actor)).map_err(|e| e.to_string())
+    core::library_service::create_library(&c, &input, actor_from(actor)?).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -342,7 +347,7 @@ fn update_library(
         color_hex: color,
         anchor_day,
     };
-    core::library_service::update_library(&c, &id, &input, actor_from(actor))
+    core::library_service::update_library(&c, &id, &input, actor_from(actor)?)
         .map_err(|e| e.to_string())
 }
 
@@ -360,14 +365,14 @@ fn archive_library(
         _ => return Err(format!("无效 mode: {mode}（keep|detach|move_to）")),
     };
     let c = conn()?;
-    core::library_service::archive_library(&c, &id, m, move_to.as_deref(), actor_from(actor))
+    core::library_service::archive_library(&c, &id, m, move_to.as_deref(), actor_from(actor)?)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn restore_library(id: String, actor: Option<String>) -> R<dashboard_domain::DateLibrary> {
     let c = conn()?;
-    core::library_service::restore_library(&c, &id, actor_from(actor)).map_err(|e| e.to_string())
+    core::library_service::restore_library(&c, &id, actor_from(actor)?).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -397,7 +402,7 @@ fn global_year_heatmap(anchor: Option<String>) -> R<core::overview_service::Glob
 #[tauri::command]
 fn move_task_library(id: String, library_id: Option<String>, actor: Option<String>) -> R<Task> {
     let c = conn()?;
-    core::library_service::move_task(&c, &id, library_id.as_deref(), actor_from(actor))
+    core::library_service::move_task(&c, &id, library_id.as_deref(), actor_from(actor)?)
         .map_err(|e| e.to_string())
 }
 
@@ -446,7 +451,8 @@ fn list_notes(limit: Option<i64>) -> R<Vec<Note>> {
 #[tauri::command]
 fn create_note(title: String, body: String, actor: Option<String>) -> R<Note> {
     let c = conn()?;
-    core::note_service::create_note(&c, &title, &body, actor_from(actor)).map_err(|e| e.to_string())
+    core::note_service::create_note(&c, &title, &body, actor_from(actor)?)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -473,7 +479,7 @@ fn list_inbox(include_processed: Option<bool>) -> R<Vec<dashboard_domain::InboxI
 #[tauri::command]
 fn add_inbox_item(content: String, actor: Option<String>) -> R<dashboard_domain::InboxItem> {
     let c = conn()?;
-    core::inbox_service::add_item(&c, &content, "desktop", actor_from(actor))
+    core::inbox_service::add_item(&c, &content, "desktop", actor_from(actor)?)
         .map_err(|e| e.to_string())
 }
 
@@ -510,126 +516,109 @@ fn checked_plugin_id(id: &str) -> R<()> {
 }
 
 #[tauri::command]
-fn plugin_list() -> R<Vec<core::plugin_service::PluginInfo>> {
+fn plugin_list(app: tauri::AppHandle) -> R<Vec<core::plugin_service::PluginInfo>> {
     let c = conn()?;
-    core::plugin_service::list_installed(&c, &core::plugin_manifest::plugins_root())
-        .map_err(|e| e.to_string())
+    let infos = core::plugin_service::list_installed(&c, &core::plugin_manifest::plugins_root())
+        .map_err(|e| e.to_string())?;
+    app.state::<plugin_cron::CronScheduler>().sync(&app, &infos);
+    Ok(infos)
 }
 
 #[tauri::command]
 fn plugin_read_manifest(id: String) -> R<core::plugin_manifest::PluginManifest> {
     checked_plugin_id(&id)?;
     let dir = core::plugin_manifest::plugins_root().join(&id);
-    core::plugin_manifest::load_from_dir(&dir).map_err(|e| e.to_string())
+    let manifest = core::plugin_manifest::load_from_dir(&dir).map_err(|e| e.to_string())?;
+    if manifest.id != id {
+        return Err("插件目录名与 manifest.id 不一致".into());
+    }
+    Ok(manifest)
 }
 
+type PluginResult<T> = Result<T, core::plugin_runtime::PluginFault>;
+#[tauri::command]
+fn plugin_open_context(
+    id: String,
+    store: State<'_, core::plugin_runtime::PluginRuntime>,
+) -> PluginResult<core::plugin_runtime::PluginSession> {
+    let c = storage::open_default().map_err(core::CoreError::from)?;
+    Ok(store.open(&c, &core::plugin_manifest::plugins_root(), &id)?)
+}
+#[tauri::command]
+fn plugin_close_context(token: String, store: State<'_, core::plugin_runtime::PluginRuntime>) {
+    store.close(&token);
+}
+#[tauri::command]
+fn plugin_load_source(
+    token: String,
+    store: State<'_, core::plugin_runtime::PluginRuntime>,
+) -> PluginResult<String> {
+    let c = storage::open_default().map_err(core::CoreError::from)?;
+    Ok(store.load_source(&c, &core::plugin_manifest::plugins_root(), &token)?)
+}
+#[tauri::command]
+async fn plugin_call(
+    app: tauri::AppHandle,
+    token: String,
+    call: core::plugin_runtime::PluginCall,
+) -> PluginResult<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let c = storage::open_default().map_err(core::CoreError::from)?;
+        let result = app.state::<core::plugin_runtime::PluginRuntime>().call(
+            &c,
+            &core::plugin_manifest::plugins_root(),
+            &token,
+            call,
+        );
+        if matches!(&result, Err(core::CoreError::PermissionDenied(_))) {
+            use tauri::Emitter;
+            let _ = app.emit(
+                "plugin-denied",
+                serde_json::json!({"code":"permission_denied"}),
+            );
+        }
+        result.map_err(Into::into)
+    })
+    .await
+    .map_err(|e| core::plugin_runtime::PluginFault {
+        code: "internal".into(),
+        message: e.to_string(),
+    })?
+}
 #[tauri::command]
 fn plugin_set_enabled(
     app: tauri::AppHandle,
     id: String,
     enabled: bool,
+    fingerprint: Option<String>,
 ) -> R<dashboard_domain::PluginRegistration> {
     checked_plugin_id(&id)?;
+    if enabled && fingerprint.is_none() {
+        return Err("启用前必须审阅权限".into());
+    }
     let c = conn()?;
-    let reg = core::plugin_service::set_plugin_enabled(
+    let result = core::plugin_service::set_plugin_enabled_checked(
         &c,
         &core::plugin_manifest::plugins_root(),
         &id,
         enabled,
         Actor::User,
+        fingerprint.as_deref(),
     )
     .map_err(|e| e.to_string())?;
-    drop(c);
-    // 启停可能改变 cron 声明集，重排调度
+    app.state::<core::plugin_runtime::PluginRuntime>()
+        .revoke_plugin(&id);
     app.state::<plugin_cron::CronScheduler>().rescan(&app);
-    Ok(reg)
+    Ok(result)
 }
 
-/// 返回插件入口 JS 源码（前端 loader 拿去 blob import）。停用 / 未注册的插件拒绝加载。
 #[tauri::command]
-fn plugin_load_source(id: String) -> R<String> {
-    checked_plugin_id(&id)?;
+fn plugin_disable_all(app: tauri::AppHandle) -> R<()> {
     let c = conn()?;
-    let reg = core::plugin_service::get_registration(&c, &id).map_err(|e| e.to_string())?;
-    if !reg.enabled {
-        return Err(format!("插件 {id} 已停用"));
-    }
-    drop(c);
-    let dir = core::plugin_manifest::plugins_root().join(&id);
-    let m = core::plugin_manifest::load_from_dir(&dir).map_err(|e| e.to_string())?;
-    std::fs::read_to_string(dir.join(&m.entry)).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn plugin_kv_get(plugin_id: String, key: String) -> R<Option<String>> {
-    checked_plugin_id(&plugin_id)?;
-    let c = conn()?;
-    core::plugin_service::kv_get(&c, &plugin_id, &key).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn plugin_kv_set(plugin_id: String, key: String, value: String) -> R<()> {
-    checked_plugin_id(&plugin_id)?;
-    let c = conn()?;
-    core::plugin_service::kv_set(&c, &plugin_id, &key, &value).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn plugin_kv_delete(plugin_id: String, key: String) -> R<bool> {
-    checked_plugin_id(&plugin_id)?;
-    let c = conn()?;
-    core::plugin_service::kv_delete(&c, &plugin_id, &key).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn plugin_kv_list(
-    plugin_id: String,
-    key_prefix: Option<String>,
-) -> R<Vec<core::plugin_service::PluginKvEntry>> {
-    checked_plugin_id(&plugin_id)?;
-    let c = conn()?;
-    core::plugin_service::kv_list(&c, &plugin_id, key_prefix.as_deref()).map_err(|e| e.to_string())
-}
-
-/// 插件 HTTP 代理：校验 manifest 网络白名单 → 后台线程请求 → 全量审计。
-/// v1 仅 GET；返回 { status, text, json }（json 为可解析时的结构化结果）。
-#[tauri::command]
-async fn plugin_http_fetch(plugin_id: String, url: String) -> R<serde_json::Value> {
-    checked_plugin_id(&plugin_id)?;
-    let dir = core::plugin_manifest::plugins_root().join(&plugin_id);
-    let manifest = core::plugin_manifest::load_from_dir(&dir).map_err(|e| e.to_string())?;
-    core::plugin_manifest::check_network_allowed(&manifest.permissions.network, &url)
+    core::plugin_service::disable_all(&c, &core::plugin_manifest::plugins_root(), Actor::User)
         .map_err(|e| e.to_string())?;
-
-    let url_owned = url.clone();
-    let (status, text) =
-        tauri::async_runtime::spawn_blocking(move || -> Result<(u16, String), String> {
-            let resp = ureq::get(&url_owned)
-                .timeout(std::time::Duration::from_secs(15))
-                .call()
-                .map_err(|e| e.to_string())?;
-            let status = resp.status();
-            let text = resp.into_string().map_err(|e| e.to_string())?;
-            Ok((status, text))
-        })
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
-
-    let json = serde_json::from_str::<serde_json::Value>(&text).ok();
-    {
-        let c = conn()?;
-        core::log_activity(
-            &c,
-            chrono::Utc::now(),
-            Actor::Plugin(plugin_id.clone()),
-            "plugin.http_fetch",
-            "plugin",
-            Some(&plugin_id),
-            &serde_json::json!({ "url": url, "status": status }),
-        );
-    }
-    Ok(serde_json::json!({ "status": status, "text": text, "json": json }))
+    app.state::<plugin_cron::CronScheduler>().rescan(&app);
+    Ok(())
 }
 
 /// 唤出面板：应用整体可能被 macOS 隐藏（⌘H / 隐藏其他），仅 window.show() 不够，
@@ -645,7 +634,9 @@ fn show_panel(app: &tauri::AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(plugin_cron::CronScheduler::default())
+        .manage(core::plugin_runtime::PluginRuntime::default())
         .on_window_event(|window, event| {
             // 关窗 = 隐藏到托盘：面板后台留存，插件随面板继续运行（plugin-system/v1 决策）
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -724,14 +715,16 @@ pub fn run() {
             delete_inbox_item,
             search_all,
             plugin_list,
+            plugin_import::plugin_pick_import_source,
+            plugin_import::plugin_preview_import,
+            plugin_import::plugin_import,
             plugin_read_manifest,
-            plugin_set_enabled,
+            plugin_open_context,
+            plugin_close_context,
             plugin_load_source,
-            plugin_kv_get,
-            plugin_kv_set,
-            plugin_kv_delete,
-            plugin_kv_list,
-            plugin_http_fetch
+            plugin_set_enabled,
+            plugin_call,
+            plugin_disable_all
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -741,4 +734,23 @@ pub fn run() {
                 show_panel(app);
             }
         });
+}
+
+#[cfg(test)]
+mod plugin_command_tests {
+    #[test]
+    fn ordinary_gui_rejects_forged_actor() {
+        for actor in [
+            "cli",
+            "ai",
+            "automation",
+            "system",
+            "plugin:com.test.a",
+            "bad",
+        ] {
+            assert!(super::actor_from(Some(actor.into())).is_err());
+        }
+        assert!(super::actor_from(None).is_ok());
+        assert!(super::actor_from(Some("user".into())).is_ok());
+    }
 }

@@ -1,137 +1,243 @@
-// 平台粘合层：扫描 → 校验 → blob 动态 import → onload。Tauri 环境专用（不进单测）。
-// 首次发现的插件自动登记（默认启用）；单个插件加载失败不影响其余插件。
-
 import { api } from "../api";
-import { createPluginApi, type PluginApi } from "./bridge";
-import type { CronRegistry } from "./crons";
+import { createPluginApi, type PluginApi, type PluginDeps } from "./bridge";
+import { Lifecycle } from "../../../../packages/plugin-sdk/src/index";
 import { validateManifest } from "./manifest";
-import type { EventBus } from "./events";
-import type { ModuleRegistry } from "./registry";
-import type { PluginInfo } from "./types";
-
+import type { PluginInfo, PluginManifest } from "./types";
 export interface LoadedPlugin {
   id: string;
   api: PluginApi;
+  manifest: PluginManifest;
   dispose: () => Promise<void>;
 }
-
-export interface PluginHostOptions {
-  registry: ModuleRegistry;
-  events: EventBus;
-  crons: CronRegistry;
-  onChanged: () => void;
-}
-
+export type PluginHostOptions = PluginDeps & {
+  onLoadError?: (id: string, error: unknown) => void;
+};
 export interface LoadAllResult {
   plugins: LoadedPlugin[];
-  /** 磁盘上首次发现、等待用户确认权限的插件 */
   pending: PluginInfo[];
 }
-
-/** onload 看门狗：超时视为坏插件 */
-const ONLOAD_TIMEOUT_MS = 8000;
-
-export async function loadAllPlugins(opts: PluginHostOptions): Promise<LoadAllResult> {
+type PluginModule = {
+  onload?: (api: PluginApi) => unknown;
+  onunload?: () => unknown;
+};
+export async function bounded<T>(
+  work: () => Promise<T> | T,
+  signal: AbortSignal,
+  ms = 8000,
+): Promise<T> {
+  if (signal.aborted) throw new Error("插件加载已取消");
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => {
+      clean();
+      reject(new Error("插件加载已取消"));
+    };
+    const timer = setTimeout(() => {
+      clean();
+      reject(new Error("插件生命周期超过 8 秒"));
+    }, ms);
+    const clean = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    Promise.resolve()
+      .then(work)
+      .then(
+        (v) => {
+          clean();
+          resolve(v);
+        },
+        (e) => {
+          clean();
+          reject(e);
+        },
+      );
+  });
+}
+export async function activateModule(
+  id: string,
+  manifest: PluginManifest,
+  token: string,
+  mod: PluginModule,
+  opts: PluginHostOptions,
+  signal: AbortSignal,
+): Promise<LoadedPlugin> {
+  const life = new Lifecycle();
+  const apiObj = createPluginApi(id, token, manifest, opts, life);
+  const clean = () => {
+    life.dispose();
+    opts.onChanged();
+  };
+  signal.addEventListener("abort", clean, { once: true });
+  try {
+    if (typeof mod.onload !== "function")
+      throw new Error("插件缺少 onload 导出");
+    await bounded(() => mod.onload!(apiObj), signal);
+    life.assert();
+  } catch (e) {
+    clean();
+    signal.removeEventListener("abort", clean);
+    throw e;
+  }
+  let disposed = false;
+  return {
+    id,
+    api: apiObj,
+    manifest,
+    dispose: async () => {
+      if (disposed) return;
+      disposed = true;
+      clean();
+      signal.removeEventListener("abort", clean);
+      await api.pluginCloseContext(token).catch(console.error);
+      if (typeof mod.onunload === "function")
+        await bounded(
+          () => mod.onunload!(),
+          new AbortController().signal,
+        ).catch(console.error);
+    },
+  };
+}
+export async function loadPlugin(
+  id: string,
+  opts: PluginHostOptions,
+  signal = new AbortController().signal,
+): Promise<LoadedPlugin> {
+  let token: string | undefined;
+  let url: string | undefined;
+  let expired = false;
+  try {
+    const opening = api.pluginOpenContext(id);
+    void opening
+      .then((s) => {
+        if (signal.aborted || expired) void api.pluginCloseContext(s.token);
+      })
+      .catch(() => {});
+    const session = await bounded(() => opening, signal);
+    token = session.token;
+    const errors = validateManifest(session.manifest);
+    if (errors.length) throw new Error(errors.join("; "));
+    const source = await bounded(
+      () => api.pluginLoadSource(session.token),
+      signal,
+    );
+    url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    const importUrl = url;
+    const mod = await bounded(
+      () => import(/* @vite-ignore */ importUrl) as Promise<PluginModule>,
+      signal,
+    );
+    return await activateModule(
+      id,
+      session.manifest,
+      session.token,
+      mod,
+      opts,
+      signal,
+    );
+  } catch (e) {
+    expired = true;
+    if (token) await api.pluginCloseContext(token).catch(console.error);
+    throw e;
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+  }
+}
+export async function loadAllPlugins(
+  opts: PluginHostOptions,
+  signal = new AbortController().signal,
+): Promise<LoadAllResult> {
   const plugins: LoadedPlugin[] = [];
   const pending: PluginInfo[] = [];
-  let infos;
-  try {
-    infos = await api.pluginList();
-  } catch (e) {
-    console.error("[plugins] 扫描插件目录失败:", e);
-    return { plugins, pending };
-  }
-
-  for (const info of infos) {
-    if (info.error) {
-      console.warn(`[plugins] 跳过非法插件 ${info.id}: ${info.error}`);
-      continue;
-    }
-    if (info.enabled === null) {
-      // 首次发现：交由用户确认权限后启用
+  for (const info of await api.pluginList()) {
+    if (signal.aborted) break;
+    if (info.error || info.legacy) continue;
+    if (info.pending_approval) {
       pending.push(info);
       continue;
     }
     if (!info.enabled) continue;
     try {
-      plugins.push(await loadPlugin(info.id, opts));
+      plugins.push(await loadPlugin(info.id, opts, signal));
     } catch (e) {
-      console.error(`[plugins] 加载 ${info.id} 失败，自动停用:`, e);
-      await api.pluginSetEnabled(info.id, false).catch(() => {});
+      if (!signal.aborted) {
+        console.error(e);
+        opts.onLoadError?.(info.id, e);
+        await api.pluginSetEnabled(info.id, false).catch(console.error);
+      }
     }
+  }
+  if (signal.aborted) {
+    await Promise.all(plugins.map((p) => p.dispose()));
+    return { plugins: [], pending: [] };
   }
   return { plugins, pending };
 }
-
-function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(msg)), ms);
-    p.then(
-      (v) => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
-}
-
-export async function loadPlugin(id: string, opts: PluginHostOptions): Promise<LoadedPlugin> {
-  const manifest = await api.pluginReadManifest(id);
-  const errors = validateManifest(manifest);
-  if (errors.length > 0) {
-    throw new Error(`manifest 校验失败: ${errors.join("; ")}`);
+/** 单一队列合并重载请求；旧代在卸载完成前不会启动下一代。 */
+export class PluginHost {
+  private stopped = false;
+  private controller = new AbortController();
+  private loaded: LoadedPlugin[] = [];
+  private queued = false;
+  private running: Promise<void> | null = null;
+  private fingerprint = "";
+  constructor(
+    private opts: PluginHostOptions,
+    private update: (r: LoadAllResult) => void,
+  ) {}
+  reload(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    this.queued = true;
+    this.controller.abort();
+    if (!this.running)
+      this.running = this.drain().finally(() => {
+        this.running = null;
+      });
+    return this.running;
   }
-  const source = await api.pluginLoadSource(id);
-
-  const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-  let mod: Record<string, unknown>;
-  try {
-    mod = (await import(/* @vite-ignore */ url)) as Record<string, unknown>;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-
-  if (typeof mod.onload !== "function") {
-    throw new Error("插件缺少 onload 导出");
-  }
-  // 重载语义：先清掉该 owner 的旧注册/订阅。StrictMode 双挂载、停用后重新启用
-  // 都会二次 loadPlugin，不清理的话 onload 里的注册会因 id 冲突抛错并触发自动停用。
-  opts.registry.unregisterOwner(id);
-  opts.events.offOwner(id);
-  opts.crons.offOwner(id);
-  const apiObj = createPluginApi(id, manifest, opts);
-  // 看门狗：onload 挂死（超时或抛错）都会让上层禁用该插件
-  await withTimeout(
-    Promise.resolve(
-      (mod.onload as (api: PluginApi) => Promise<void> | void)(apiObj),
-    ),
-    ONLOAD_TIMEOUT_MS,
-    `插件 ${id} 的 onload 超过 ${ONLOAD_TIMEOUT_MS}ms 未完成（看门狗）`,
-  );
-
-  return {
-    id,
-    api: apiObj,
-    dispose: async () => {
-      try {
-        if (typeof mod.onunload === "function") {
-          await withTimeout(
-            Promise.resolve((mod.onunload as () => Promise<void> | void)()),
-            ONLOAD_TIMEOUT_MS,
-            `插件 ${id} 的 onunload 超时（忽略）`,
-          );
-        }
-      } finally {
-        // 无论 onunload 是否抛错，注册项与订阅必须清理干净（T8）
-        opts.registry.unregisterOwner(id);
-        opts.events.offOwner(id);
-        opts.crons.offOwner(id);
-        opts.onChanged();
+  private async drain() {
+    while (this.queued && !this.stopped) {
+      this.queued = false;
+      await Promise.all(this.loaded.map((p) => p.dispose()));
+      this.loaded = [];
+      this.update({ plugins: [], pending: [] });
+      this.controller = new AbortController();
+      const r = await loadAllPlugins(this.opts, this.controller.signal).catch(
+        (e) => {
+          console.error(e);
+          return { plugins: [], pending: [] };
+        },
+      );
+      if (this.stopped || this.controller.signal.aborted) {
+        await Promise.all(r.plugins.map((p) => p.dispose()));
+        continue;
       }
-    },
-  };
+      this.loaded = r.plugins;
+      this.update(r);
+    }
+  }
+  async poll() {
+    if (this.stopped || this.running) return;
+    const infos = await api.pluginList();
+    const f = JSON.stringify(
+      infos.map((p) => [
+        p.id,
+        p.enabled,
+        p.fingerprint,
+        p.revision,
+        p.error,
+        p.pending_approval,
+      ]),
+    );
+    if (f !== this.fingerprint) {
+      this.fingerprint = f;
+      await this.reload();
+    }
+  }
+  stop() {
+    this.stopped = true;
+    this.queued = false;
+    this.controller.abort();
+    return Promise.all(this.loaded.map((p) => p.dispose())).then(() => {});
+  }
 }

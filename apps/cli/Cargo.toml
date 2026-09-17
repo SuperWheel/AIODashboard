@@ -11,6 +11,7 @@ path = "src/main.rs"
 clap = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
+uuid = { workspace = true }
 rusqlite = { workspace = true }
 
 dashboard-domain = { workspace = true }
@@ -19,5 +20,6 @@ dashboard-core = { workspace = true }
 dashboard-protocol = { workspace = true }
 
 [dev-dependencies]
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 tempfile = "3"
 serde_json = { workspace = true }

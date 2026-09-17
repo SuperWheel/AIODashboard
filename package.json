@@ -1,0 +1,19 @@
+{
+  "name": "aiodashboard-plugin-workspace",
+  "private": true,
+  "workspaces": [
+    "packages/plugin-sdk",
+    "packages/plugin-test"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@aiodashboard/plugin-sdk && npm run build --workspace=@aiodashboard/plugin-test",
+    "test": "node --test packages/plugin-test/test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "prettier": "^3.9.6",
+    "react": "^18.3.1",
+    "typescript": "^5.6.2"
+  },
+  "type": "module"
+}

@@ -43,7 +43,6 @@ fn validate_kv_key(key: &str) -> CoreResult<()> {
 }
 
 const KV_VALUE_MAX: usize = 1_000_000;
-
 /// 面板首次发现插件时登记（幂等）；仅首次登记写审计。
 pub fn ensure_registered(
     conn: &rusqlite::Connection,
@@ -76,6 +75,25 @@ pub fn get_registration(
 ) -> CoreResult<PluginRegistration> {
     plugin_repo::get_registration(conn, plugin_id)?
         .ok_or_else(|| CoreError::NotFound(format!("plugin {plugin_id}")))
+}
+
+pub fn update_install_metadata(
+    conn: &rusqlite::Connection,
+    plugin_id: &str,
+    source: &str,
+    sha256: &str,
+    installed_version: &str,
+    previous_version: Option<&str>,
+) -> CoreResult<()> {
+    plugin_repo::update_install_metadata(
+        conn,
+        plugin_id,
+        source,
+        sha256,
+        installed_version,
+        previous_version,
+    )?;
+    Ok(())
 }
 
 /// 启用 / 停用插件。属于业务变更：审计 + 快照刷新。
@@ -114,16 +132,62 @@ pub fn set_plugin_enabled(
     enabled: bool,
     actor: Actor,
 ) -> CoreResult<PluginRegistration> {
-    if plugin_repo::get_registration(conn, plugin_id)?.is_none() {
-        let dir = root.join(plugin_id);
-        if !dir.is_dir() {
+    set_plugin_enabled_checked(conn, root, plugin_id, enabled, actor, None)
+}
+pub fn set_plugin_enabled_checked(
+    conn: &rusqlite::Connection,
+    root: &std::path::Path,
+    plugin_id: &str,
+    enabled: bool,
+    actor: Actor,
+    expected: Option<&str>,
+) -> CoreResult<PluginRegistration> {
+    validate_plugin_id(plugin_id)?;
+    let _guard = crate::plugin_package::lock(root)?;
+    crate::plugin_package::recover(conn, root)?;
+    let bundle = if enabled || plugin_repo::get_registration(conn, plugin_id)?.is_none() {
+        if !root.join(plugin_id).exists() {
             return Err(CoreError::NotFound(format!("plugin {plugin_id}")));
         }
-        // 目录存在但 manifest 非法 → Validation 原样上抛
-        crate::plugin_manifest::load_from_dir(&dir)?;
-        ensure_registered(conn, plugin_id)?;
+        Some(crate::plugin_package::read_bundle(&root.join(plugin_id))?)
+    } else {
+        None
+    };
+    if enabled {
+        let b = bundle
+            .as_ref()
+            .ok_or_else(|| CoreError::Validation("插件包缺失".into()))?;
+        crate::plugin_manifest::require_current(&b.manifest)?;
+        if expected.is_some_and(|v| v != b.hash) {
+            return Err(CoreError::PermissionDenied(
+                "插件内容变化，请重新审阅权限".into(),
+            ));
+        }
+        if plugin_repo::install_metadata(conn, plugin_id)?
+            .and_then(|m| m.content_sha256)
+            .is_some_and(|h| h != b.hash)
+        {
+            return Err(CoreError::PermissionDenied(
+                "已安装插件内容变化，请重新安装".into(),
+            ));
+        }
     }
-    set_enabled(conn, plugin_id, enabled, actor)
+    plugin_repo::immediate(conn, |c| -> CoreResult<()> {
+        ensure_registered(c, plugin_id)?;
+        if enabled {
+            plugin_repo::approve(
+                c,
+                plugin_id,
+                &bundle
+                    .as_ref()
+                    .ok_or_else(|| CoreError::Validation("缺少插件包".into()))?
+                    .hash,
+            )?;
+        }
+        set_enabled(c, plugin_id, enabled, actor)?;
+        Ok(())
+    })?;
+    get_registration(conn, plugin_id)
 }
 
 /// CLI / GUI 列表用读模型：磁盘发现 ∪ 注册表。
@@ -135,8 +199,19 @@ pub struct PluginInfo {
     /// None = 磁盘上存在但尚未注册
     pub enabled: Option<bool>,
     pub dir: String,
+    pub source: String,
+    pub trust_mode: String,
+    pub api_version: String,
+    pub sha256: Option<String>,
+    pub installed_version: Option<String>,
+    pub previous_version: Option<String>,
     /// manifest 缺失 / 非法 / 目录名不一致时的错误信息
     pub error: Option<String>,
+    pub fingerprint: String,
+    pub integrity: String,
+    pub legacy: bool,
+    pub revision: i64,
+    pub pending_approval: bool,
 }
 
 /// 列出全部已知插件：磁盘扫描结果 + 仅存在于注册表的残留项。
@@ -144,6 +219,8 @@ pub fn list_installed(
     conn: &rusqlite::Connection,
     root: &std::path::Path,
 ) -> CoreResult<Vec<PluginInfo>> {
+    let _guard = crate::plugin_package::lock(root)?;
+    crate::plugin_package::recover(conn, root)?;
     let mut out: Vec<PluginInfo> = Vec::new();
     for d in crate::plugin_manifest::scan_plugins_dir(root) {
         let dir_name = d
@@ -153,21 +230,81 @@ pub fn list_installed(
             .unwrap_or("unknown")
             .to_string();
         match d.manifest {
-            Some(m) => out.push(PluginInfo {
-                enabled: plugin_repo::get_registration(conn, &m.id)?.map(|r| r.enabled),
-                id: m.id.clone(),
-                name: m.name.clone(),
-                version: m.version.clone(),
-                dir: d.dir.display().to_string(),
-                error: None,
-            }),
+            Some(m) => {
+                let meta = plugin_repo::install_metadata(conn, &m.id)?;
+                let bundle = crate::plugin_package::read_bundle(&d.dir);
+                let fingerprint = bundle.as_ref().map(|b| b.hash.clone()).unwrap_or_default();
+                let mismatch = meta
+                    .as_ref()
+                    .and_then(|m| m.content_sha256.as_ref())
+                    .is_some_and(|h| h != &fingerprint);
+                let approved =
+                    meta.as_ref().and_then(|m| m.approved_sha256.as_ref()) == Some(&fingerprint);
+                let registered = plugin_repo::get_registration(conn, &m.id)?;
+                let revision = meta.as_ref().map_or(0, |m| m.revision);
+                let legacy = m.api_version != "plugin.protocol/v2";
+                out.push(PluginInfo {
+                    enabled: plugin_repo::get_registration(conn, &m.id)?.map(|r| r.enabled),
+                    id: m.id.clone(),
+                    name: m.name.clone(),
+                    version: m.version.clone(),
+                    dir: d.dir.display().to_string(),
+                    source: meta
+                        .as_ref()
+                        .map(|v| v.source.clone())
+                        .unwrap_or_else(|| "local".into()),
+                    trust_mode: "trusted-webview".into(),
+                    api_version: if m.api_version.is_empty() {
+                        "plugin.protocol/v1".into()
+                    } else {
+                        m.api_version.clone()
+                    },
+                    sha256: meta.as_ref().and_then(|v| v.sha256.clone()),
+                    installed_version: meta.as_ref().and_then(|v| v.installed_version.clone()),
+                    previous_version: meta.as_ref().and_then(|v| v.previous_version.clone()),
+                    error: bundle
+                        .err()
+                        .map(|e| e.to_string())
+                        .or_else(|| mismatch.then(|| "完整性校验失败，请重新安装".into())),
+                    fingerprint,
+                    integrity: if mismatch {
+                        "mismatch"
+                    } else if meta
+                        .as_ref()
+                        .and_then(|m| m.content_sha256.as_ref())
+                        .is_some()
+                    {
+                        "verified"
+                    } else {
+                        "local-unverified"
+                    }
+                    .into(),
+                    legacy,
+                    revision,
+                    pending_approval: !legacy
+                        && !mismatch
+                        && (registered.is_none()
+                            || registered.is_some_and(|r| r.enabled && !approved)),
+                })
+            }
             None => out.push(PluginInfo {
                 id: dir_name,
                 name: "-".into(),
                 version: "-".into(),
                 enabled: None,
                 dir: d.dir.display().to_string(),
+                source: "local".into(),
+                trust_mode: "unknown".into(),
+                api_version: "-".into(),
+                sha256: None,
+                installed_version: None,
+                previous_version: None,
                 error: d.error,
+                fingerprint: String::new(),
+                integrity: "invalid".into(),
+                legacy: true,
+                revision: 0,
+                pending_approval: false,
             }),
         }
     }
@@ -179,7 +316,18 @@ pub fn list_installed(
                 version: "-".into(),
                 enabled: Some(r.enabled),
                 dir: root.join(&r.id).display().to_string(),
+                source: "missing".into(),
+                trust_mode: "unknown".into(),
+                api_version: "-".into(),
+                sha256: None,
+                installed_version: None,
+                previous_version: None,
                 error: Some("插件目录不存在".into()),
+                fingerprint: String::new(),
+                integrity: "missing".into(),
+                legacy: false,
+                revision: 0,
+                pending_approval: false,
             });
         }
     }
@@ -234,6 +382,41 @@ pub fn kv_list(
         .collect())
 }
 
+/// quota 检查和写入在同一 SQLite 写事务内完成。
+pub fn kv_set_with_quota(
+    conn: &rusqlite::Connection,
+    id: &str,
+    key: &str,
+    value: &str,
+    quota: u64,
+) -> CoreResult<()> {
+    validate_kv_key(key)?;
+    plugin_repo::immediate(conn, |c| -> CoreResult<()> {
+        let current = plugin_repo::kv_usage_bytes(c, id)?;
+        let old = plugin_repo::kv_get(c, id, key)?;
+        let used = current.saturating_sub(old.map_or(0, |v| key.len() + v.len()))
+            + key.len()
+            + value.len();
+        if used as u64 > quota {
+            return Err(CoreError::PermissionDenied("KV quota 超限".into()));
+        }
+        kv_set(c, id, key, value)
+    })
+}
+
+pub fn disable_all(
+    conn: &rusqlite::Connection,
+    root: &std::path::Path,
+    actor: Actor,
+) -> CoreResult<()> {
+    let _guard = crate::plugin_package::lock(root)?;
+    crate::plugin_package::recover(conn, root)?;
+    for p in plugin_repo::list_registrations(conn)? {
+        set_enabled(conn, &p.id, false, actor.clone())?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,7 +450,7 @@ mod tests {
     fn registration_and_toggle() {
         let conn = mem_conn();
         ensure_registered(&conn, "com.a").unwrap();
-        assert!(ensure_registered(&conn, "com.a").unwrap().enabled);
+        assert!(!ensure_registered(&conn, "com.a").unwrap().enabled);
 
         let off = set_enabled(&conn, "com.a", false, Actor::Cli).unwrap();
         assert!(!off.enabled);

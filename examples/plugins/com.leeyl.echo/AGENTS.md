@@ -1,29 +1,12 @@
 # Echo 插件（AI 开发说明）
 
-这是 AIODashboard 插件系统的最小示例。AI Agent 开发新插件时，复制本目录并修改。
+最小单文件 ESM 示例，协议 `plugin.protocol/v2`。复制后同步修改目录名、manifest.id 与贡献点声明。
 
-## 目录结构
+- `context.read` 授权 today；`ui: ["today_card"]` 与 contributions.today_cards 共同授权卡片；显式 quota 授权插件独立 KV。
+- 未声明能力即拒绝。Core 写入由宿主上下文派生 actor；不得向 API 传入 actor/plugin_id。
+- 从 `api.react` 使用宿主 React。所有注册返回 disposer，卸载由宿主清理 SDK 资源。
+- 领域事件只允许声明后订阅（panel 生命周期事件除外）；自定义事件只用 `plugin.<id>:<topic>`。
+- 开发脚手架：`dashboard plugin new com.example.demo --template ts`；`plugin dev 路径 --run` 执行构建和测试。
+- 安装默认停用；在 GUI 审阅启用，修改后重新确认。CLI 停用会自动同步到 GUI。
 
-- `manifest.json`：清单。`id` 为反向域名且必须与目录名一致；`permissions` 声明式权限（未声明即无权）；`contributions` 声明 UI 贡献点。
-- `main.js`：入口（`manifest.entry` 指向）。ESM 单文件，导出 `onload(api)` / 可选 `onunload()`。
-
-## Plugin API 速查
-
-- `api.pluginId` / `api.react`（createElement、hooks —— 宿主共享单实例 React）
-- `api.core`：`today()` `listTasks(scope)` `createTask(title, dueAt?)` `setTaskStatus(id, status)`
-  `deleteTask(id)` `search(query)` `addInboxItem(content)` `createNote(title, body)`
-  —— 全部以 `actor=plugin:<id>` 写审计日志
-- `api.storage.kv`：`get/set/delete/list`（服务端按插件 id 强制命名空间）
-- `api.fetch(url)`：host 必须在 `manifest.permissions.network` 白名单内
-- `api.events.on(topic, handler)`：领域事件须在 `permissions.events` 声明；
-  `panel.refresh/show/hide` 无需声明。handler 抛错不会影响宿主
-- `api.ui`：`registerTodayCard({ id, title, component })` / `registerView(...)` / `registerCommand(...)`
-- `api.log.info|warn|error`
-
-## 验证流程（CLI）
-
-```bash
-dashboard plugin list                # 新插件显示为 new，面板加载后自动登记
-dashboard plugin disable <id>        # 停用后卡片/视图消失
-dashboard activity --limit 20        # 检查 actor=plugin:<id> 审计
-```
+权威 API 与安全边界见 [开发手册](../../../docs/PLUGIN_API.md)。

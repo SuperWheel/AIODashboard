@@ -8,44 +8,34 @@ export const KNOWN_EVENTS = [
   "note.created",
 ] as const;
 
-export interface PluginPermissions {
-  /** 允许访问的 host 白名单（精确域名） */
-  network?: string[];
-  /** 订阅的领域事件（见 KNOWN_EVENTS）；panel.* 面板事件无需声明 */
-  events?: string[];
-  /** cron 表达式（5 段），由 Rust 侧调度驱动 */
-  cron?: string[];
-}
+export type { PluginManifest } from "../../../../packages/plugin-sdk/src/index";
+import type { PluginManifest } from "../../../../packages/plugin-sdk/src/index";
 
-export interface PluginViewContribution {
+export type PluginImportSourceKind = "zip" | "directory";
+
+export interface PluginImportCheck {
   id: string;
-  title: string;
+  content_sha256: string;
+  archive_sha256: string | null;
+  target_stamp: string;
 }
 
-export interface PluginCardContribution {
+export interface PluginImportPreview {
+  manifest: PluginManifest;
+  source: PluginImportSourceKind;
+  source_path: string;
+  replacing: boolean;
+  current_version: string | null;
+  current_enabled: boolean;
+  check: PluginImportCheck;
+}
+
+export interface PluginInstallResult {
   id: string;
-}
-
-export interface PluginCommandContribution {
-  id: string;
-  title: string;
-}
-
-export interface PluginContributions {
-  views?: PluginViewContribution[];
-  today_cards?: PluginCardContribution[];
-  commands?: PluginCommandContribution[];
-}
-
-export interface PluginManifest {
-  id: string;
-  name: string;
   version: string;
-  /** 入口 JS 文件名（相对插件目录，不允许路径分隔符） */
-  entry: string;
-  description?: string;
-  permissions?: PluginPermissions;
-  contributions?: PluginContributions;
+  sha256: string | null;
+  content_sha256: string;
+  enabled: boolean;
 }
 
 export interface PluginInfo {
@@ -55,5 +45,16 @@ export interface PluginInfo {
   /** null = 磁盘上存在但尚未注册 */
   enabled: boolean | null;
   dir: string;
+  source: string;
+  trust_mode: string;
+  api_version: string;
+  sha256?: string | null;
+  installed_version?: string | null;
+  previous_version?: string | null;
+  fingerprint: string;
+  integrity: string;
+  legacy: boolean;
+  revision: number;
+  pending_approval: boolean;
   error?: string;
 }

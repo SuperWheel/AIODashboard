@@ -26,7 +26,17 @@ pub struct PluginManifest {
     /// 入口 JS 文件名（相对插件目录，不允许路径分隔符）
     pub entry: String,
     #[serde(default)]
+    pub api_version: String,
+    #[serde(default)]
+    pub min_host_version: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub license: String,
+    #[serde(default)]
+    pub homepage: String,
     #[serde(default)]
     pub permissions: PluginPermissions,
     #[serde(default)]
@@ -35,6 +45,12 @@ pub struct PluginManifest {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PluginPermissions {
+    #[serde(default)]
+    pub core: Vec<String>,
+    #[serde(default)]
+    pub ui: Vec<String>,
+    #[serde(default)]
+    pub storage_quota_bytes: Option<u64>,
     /// 允许访问的 host 白名单（精确域名，如 "api.github.com"）
     #[serde(default)]
     pub network: Vec<String>,
@@ -54,6 +70,8 @@ pub struct PluginContributions {
     pub today_cards: Vec<PluginCardContribution>,
     #[serde(default)]
     pub commands: Vec<PluginCommandContribution>,
+    #[serde(default)]
+    pub settings: Vec<PluginCommandContribution>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +94,53 @@ pub struct PluginCommandContribution {
 impl PluginManifest {
     pub fn validate(&self) -> CoreResult<()> {
         crate::plugin_service::validate_plugin_id(&self.id)?;
+        if !["", "plugin.protocol/v1", "plugin.protocol/v2"].contains(&self.api_version.as_str()) {
+            return Err(CoreError::Validation(format!(
+                "插件必须声明受支持的 API 版本，当前为 '{}'",
+                self.api_version
+            )));
+        }
+        stable_version(&self.version)?;
+        if !self.min_host_version.is_empty()
+            && stable_version(&self.min_host_version)? > stable_version(env!("CARGO_PKG_VERSION"))?
+        {
+            return Err(CoreError::Validation(
+                "宿主版本低于 min_host_version".into(),
+            ));
+        }
+        if self.permissions.cron.len() > 16 {
+            return Err(CoreError::Validation("cron 最多 16 条".into()));
+        }
+        if let Some(quota) = self.permissions.storage_quota_bytes {
+            if quota == 0 || quota > 10_000_000 {
+                return Err(CoreError::Validation(
+                    "storage quota 必须在 1B–10MB 内".into(),
+                ));
+            }
+        }
+        const CORE_CAPS: &[&str] = &[
+            "context.read",
+            "task.read",
+            "task.write",
+            "note.read",
+            "note.write",
+            "inbox.read",
+            "inbox.write",
+            "search.read",
+        ];
+        const UI_CAPS: &[&str] = &["command", "view", "today_card", "settings"];
+        for cap in &self.permissions.core {
+            if !CORE_CAPS.contains(&cap.as_str()) {
+                return Err(CoreError::Validation(format!(
+                    "未知 Core capability '{cap}'"
+                )));
+            }
+        }
+        for cap in &self.permissions.ui {
+            if !UI_CAPS.contains(&cap.as_str()) {
+                return Err(CoreError::Validation(format!("未知 UI capability '{cap}'")));
+            }
+        }
         if self.name.trim().is_empty() || self.name.chars().count() > 100 {
             return Err(CoreError::Validation(
                 "插件 name 不能为空且 ≤100 字符".into(),
@@ -109,7 +174,7 @@ impl PluginManifest {
             }
         }
         for c in &self.permissions.cron {
-            if c.split_whitespace().count() != 5 {
+            if c.split_whitespace().count() != 5 || croner::Cron::new(c).parse().is_err() {
                 return Err(CoreError::Validation(format!(
                     "无效 cron '{c}'（需 5 段表达式，如 */1 * * * *）"
                 )));
@@ -133,8 +198,33 @@ impl PluginManifest {
                 .iter()
                 .map(|c| (&c.id, &c.title)),
         )?;
+        check_ids_unique(
+            "settings",
+            self.contributions
+                .settings
+                .iter()
+                .map(|v| (&v.id, &v.title)),
+        )?;
         Ok(())
     }
+}
+
+pub fn stable_version(s: &str) -> CoreResult<semver::Version> {
+    let v = semver::Version::parse(s)
+        .map_err(|_| CoreError::Validation("version 必须是 x.y.z 稳定版本".into()))?;
+    if !v.pre.is_empty() || !v.build.is_empty() {
+        return Err(CoreError::Validation("仅支持 x.y.z 稳定版本".into()));
+    }
+    Ok(v)
+}
+
+pub fn require_current(m: &PluginManifest) -> CoreResult<()> {
+    if m.api_version != "plugin.protocol/v2" {
+        return Err(CoreError::Validation(
+            "旧插件请迁移到 plugin.protocol/v2 并显式声明权限".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn check_ids_unique<'a, I: Iterator<Item = (&'a String, &'a String)>>(
@@ -177,31 +267,14 @@ pub fn validate_host(host: &str) -> CoreResult<()> {
     }
 }
 
-/// 从 URL 提取小写 host（仅支持 http/https，端口会被剥掉）。
-pub fn extract_host(url: &str) -> Option<String> {
-    let rest = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))?;
-    let end = rest.find(['/', '?', '#', ':']).unwrap_or(rest.len());
-    let host = &rest[..end];
-    if host.is_empty() {
-        None
-    } else {
-        Some(host.to_ascii_lowercase())
-    }
+pub fn extract_host(raw: &str) -> Option<String> {
+    crate::plugin_network::parse_url(raw)
+        .ok()?
+        .host_str()
+        .map(str::to_owned)
 }
-
-/// 网络白名单判定（T5 的纯逻辑半边，代理命令在接口层）。
-pub fn check_network_allowed(allowlist: &[String], url: &str) -> CoreResult<()> {
-    let host = extract_host(url)
-        .ok_or_else(|| CoreError::Validation(format!("非法 URL '{url}'（仅支持 http/https）")))?;
-    if allowlist.iter().any(|h| h == &host) {
-        Ok(())
-    } else {
-        Err(CoreError::Validation(format!(
-            "network 权限未包含 host '{host}'"
-        )))
-    }
+pub fn check_network_allowed(allowlist: &[String], raw: &str) -> CoreResult<()> {
+    crate::plugin_network::allowed_url(allowlist, raw).map(|_| ())
 }
 
 /// 插件根目录：`DASHBOARD_PLUGINS_DIR` 或数据库同目录下 `plugins/`。
@@ -219,18 +292,34 @@ pub fn plugins_root() -> PathBuf {
 
 /// 读取并校验一个插件目录（manifest 合法且 entry 文件存在）。
 pub fn load_from_dir(dir: &Path) -> CoreResult<PluginManifest> {
+    let meta = std::fs::symlink_metadata(dir).map_err(|e| CoreError::Validation(e.to_string()))?;
+    if meta.file_type().is_symlink() {
+        return Err(CoreError::Validation("插件目录不能是符号链接".into()));
+    }
     let path = dir.join("manifest.json");
+    crate::plugin_package::regular_file(&path)?;
+    if std::fs::metadata(&path)
+        .map_err(|e| CoreError::Validation(e.to_string()))?
+        .len()
+        > 65536
+    {
+        return Err(CoreError::Validation("manifest 超过 64KB".into()));
+    }
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| CoreError::Validation(format!("读取 {} 失败: {e}", path.display())))?;
     let m: PluginManifest = serde_json::from_str(&raw).map_err(|e| {
         CoreError::Validation(format!("{} 不是合法的插件清单: {e}", path.display()))
     })?;
     m.validate()?;
+    crate::plugin_package::regular_file(&dir.join(&m.entry))?;
     if !dir.join(&m.entry).is_file() {
         return Err(CoreError::Validation(format!(
             "插件 {} 的入口文件 '{}' 不存在",
             m.id, m.entry
         )));
+    }
+    if dir.file_name().and_then(|s| s.to_str()) != Some(m.id.as_str()) {
+        return Err(CoreError::Validation("目录名与 manifest.id 不一致".into()));
     }
     Ok(m)
 }
@@ -252,7 +341,7 @@ pub fn scan_plugins_dir(root: &Path) -> Vec<DiscoveredPlugin> {
     };
     for e in entries.flatten() {
         let dir = e.path();
-        if !dir.is_dir() {
+        if e.file_name().to_string_lossy().starts_with('.') || !dir.is_dir() {
             continue;
         }
         match load_from_dir(&dir) {
@@ -312,6 +401,25 @@ mod tests {
         m.validate().unwrap();
         assert!(m.permissions.network.is_empty());
         assert!(m.contributions.views.is_empty());
+    }
+
+    #[test]
+    fn manifest_optional_capabilities_are_backward_compatible() {
+        let raw = r#"{"id":"com.test.cap","name":"Cap","version":"0.1.0","entry":"main.js","api_version":"plugin.protocol/v1","permissions":{"core":["task.read"],"ui":["command"],"storage_quota_bytes":1048576}}"#;
+        let m: PluginManifest = serde_json::from_str(raw).unwrap();
+        assert!(m.validate().is_ok());
+        let old: PluginManifest = serde_json::from_str(&valid_manifest("com.test.old")).unwrap();
+        assert!(old.validate().is_ok());
+    }
+
+    #[test]
+    fn manifest_rejects_unknown_capability_and_bad_quota() {
+        let raw = r#"{"id":"com.test.cap","name":"Cap","version":"0.1.0","entry":"main.js","permissions":{"core":["task.erase"]}}"#;
+        let m: PluginManifest = serde_json::from_str(raw).unwrap();
+        assert!(m.validate().is_err());
+        let raw = r#"{"id":"com.test.cap","name":"Cap","version":"0.1.0","entry":"main.js","permissions":{"storage_quota_bytes":0}}"#;
+        let m: PluginManifest = serde_json::from_str(raw).unwrap();
+        assert!(m.validate().is_err());
     }
 
     /// T6：非法字段逐一拒绝。
@@ -397,5 +505,7 @@ mod tests {
         assert!(check_network_allowed(&allow, "https://evil.com/x").is_err());
         assert!(check_network_allowed(&allow, "ftp://api.github.com").is_err());
         assert!(check_network_allowed(&allow, "not a url").is_err());
+        assert!(check_network_allowed(&["127.0.0.1".to_string()], "http://127.0.0.1/x").is_err());
+        assert!(check_network_allowed(&["api.local".to_string()], "https://api.local/x").is_err());
     }
 }

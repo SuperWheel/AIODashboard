@@ -110,7 +110,7 @@ fn chain_task_priority_flags() {
     assert_eq!(code, 0, "{out}");
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["data"]["priority"], 4);
-    assert_eq!(v["meta"]["schema_version"], "5");
+    assert_eq!(v["meta"]["schema_version"], "6");
     let id = v["data"]["id"].as_str().unwrap().to_string();
 
     // update --priority 2
@@ -150,7 +150,7 @@ fn chain_core_create_then_cli_read_json() {
     assert_eq!(code, 0);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], true);
-    assert_eq!(v["meta"]["schema_version"], "5");
+    assert_eq!(v["meta"]["schema_version"], "6");
     let items = v["data"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["id"], task.id.as_str());
@@ -291,7 +291,7 @@ fn ai_error_protocol_not_found_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "5");
+    assert_eq!(v["meta"]["schema_version"], "6");
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn plugin_list_enable_disable_roundtrip() {
     let env = Env::new();
     env.write_plugin(
         "com.test.echo",
-        r#"{"id":"com.test.echo","name":"Echo","version":"0.1.0","entry":"main.js"}"#,
+        r#"{"id":"com.test.echo","name":"Echo","version":"0.1.0","entry":"main.js","api_version":"plugin.protocol/v2"}"#,
         "export function onload() {}",
     );
 
@@ -383,7 +383,7 @@ fn plugin_unknown_id_exit_code_3() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["error"]["code"], "not_found");
-    assert_eq!(v["meta"]["schema_version"], "5");
+    assert_eq!(v["meta"]["schema_version"], "6");
 }
 
 /// T4：manifest 非法的目录在 list 中以 error 呈现，不影响整体。
@@ -445,6 +445,20 @@ fn plugin_new_and_dev_roundtrip() {
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("today_cards"), "{out}");
 
+    let (code, out) = env.cli(&[
+        "plugin",
+        "new",
+        "com.test.ts-scaffold",
+        "--template",
+        "ts",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let ts_dir = env.plugins_dir.join("com.test.ts-scaffold");
+    assert!(ts_dir.join("main.ts").is_file());
+    assert!(ts_dir.join("vendor/plugin-sdk/src/index.ts").is_file());
+    assert!(ts_dir.join("package.json").is_file());
+
     // 重复 new → 冲突（exit 5）
     let (code, out) = env.cli(&["plugin", "new", "com.test.scaffold", "--json"]);
     assert_eq!(code, 5, "{out}");
@@ -454,6 +468,43 @@ fn plugin_new_and_dev_roundtrip() {
     // dev 指向不存在的插件 → exit 3
     let (code, _) = env.cli(&["plugin", "dev", "com.test.missing", "--json"]);
     assert_eq!(code, 3);
+}
+
+#[test]
+fn plugin_pack_install_and_rollback_roundtrip() {
+    let env = Env::new();
+    let (code, out) = env.cli(&["plugin", "new", "com.test.package", "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let archive = env._dir.path().join("com.test.package.zip");
+    let archive_arg = archive.to_string_lossy().to_string();
+    let (code, out) = env.cli(&[
+        "plugin",
+        "pack",
+        "com.test.package",
+        "--output",
+        &archive_arg,
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(archive.is_file());
+    let (code, _) = env.cli(&[
+        "plugin",
+        "install",
+        &archive_arg,
+        "--sha256",
+        "00",
+        "--json",
+    ]);
+    assert_eq!(code, 2);
+    let (code, out) = env.cli(&["plugin", "install", &archive_arg, "--json"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(env
+        .plugins_dir
+        .join("com.test.package")
+        .join("manifest.json")
+        .is_file());
+    let (code, out) = env.cli(&["plugin", "rollback", "com.test.package", "--json"]);
+    assert_eq!(code, 0, "{out}");
 }
 
 #[test]
@@ -467,7 +518,7 @@ fn chain_task_recurrence() {
     };
     let off_day = (wd % 7) + 1; // 必不等于今天
 
-    // 1) weekly 含今天：创建即 JSON 带 recurrence，schema_version=5，打卡成功
+    // 1) weekly 含今天：创建即 JSON 带 recurrence，schema_version=6，打卡成功
     let (code, out) = env.cli(&[
         "task",
         "create",
@@ -482,7 +533,7 @@ fn chain_task_recurrence() {
     assert_eq!(code, 0, "{out}");
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["data"]["recurrence"]["kind"], "weekly");
-    assert_eq!(v["meta"]["schema_version"], "5");
+    assert_eq!(v["meta"]["schema_version"], "6");
     let id_on = v["data"]["id"].as_str().unwrap().to_string();
     let (code, out) = env.cli(&["task", "checkin", &id_on, "--json"]);
     assert_eq!(code, 0, "{out}");
@@ -557,4 +608,136 @@ fn chain_task_recurrence() {
         "--json",
     ]);
     assert_eq!(code, 2);
+}
+
+#[test]
+fn plugin_install_default_off_metadata_upgrade_rollback_and_safe_mode() {
+    let env = Env::new();
+    let id = "com.test.release";
+    assert_eq!(env.cli(&["plugin", "new", id, "--json"]).0, 0);
+    let archive = env._dir.path().join("release.zip");
+    let archive = archive.to_str().unwrap();
+    assert_eq!(
+        env.cli(&["plugin", "pack", id, "--output", archive, "--json"])
+            .0,
+        0
+    );
+    assert_eq!(env.cli(&["plugin", "install", archive, "--json"]).0, 0);
+    let read = || {
+        let (_, raw) = env.cli(&["plugin", "list", "--json"]);
+        let v: Value = serde_json::from_str(&raw).unwrap();
+        v["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    let one = read();
+    assert_eq!(one["enabled"], false);
+    assert_eq!(one["source"], "zip");
+    assert_eq!(one["integrity"], "verified");
+    assert!(one["sha256"].is_string());
+    assert_eq!(env.cli(&["plugin", "enable", id, "--json"]).0, 0);
+    // 已安装包修改后不能重新启用，必须重新安装。
+    let manifest = env.plugins_dir.join(id).join("manifest.json");
+    let mut m: Value = serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+    m["version"] = serde_json::json!("0.2.0");
+    std::fs::write(&manifest, m.to_string()).unwrap();
+    assert_eq!(env.cli(&["plugin", "enable", id, "--json"]).0, 4);
+    // 从独立来源升级，使旧版本备份保持正确的摘要。
+    std::fs::write(&manifest, m.to_string().replace("0.2.0", "0.1.0")).unwrap();
+    let source = env._dir.path().join(id);
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("manifest.json"), m.to_string()).unwrap();
+    std::fs::write(source.join("main.js"), "export function onload(){}").unwrap();
+    // 上面重序列化的 manifest 改变原字节，先恢复原包后再升级。
+    assert_eq!(env.cli(&["plugin", "install", archive, "--json"]).0, 0);
+    assert_eq!(
+        env.cli(&["plugin", "install", source.to_str().unwrap(), "--json"])
+            .0,
+        0
+    );
+    let two = read();
+    assert_eq!(two["installed_version"], "0.2.0");
+    assert_eq!(two["previous_version"], "0.1.0");
+    assert_eq!(two["enabled"], false);
+    assert_eq!(env.cli(&["plugin", "rollback", id, "--json"]).0, 0);
+    let restored = read();
+    assert_eq!(restored["version"], "0.1.0");
+    assert_eq!(restored["installed_version"], "0.1.0");
+    assert_eq!(restored["source"], "zip");
+    assert_eq!(restored["sha256"], one["sha256"]);
+    assert_eq!(restored["enabled"], false);
+    assert_eq!(env.cli(&["plugin", "enable", id, "--json"]).0, 0);
+    assert_eq!(env.cli(&["plugin", "safe-mode", "--json"]).0, 0);
+    assert_eq!(read()["enabled"], false);
+}
+
+#[test]
+fn plugin_zip_traversal_symlink_duplicate_and_missing_entry_never_replace() {
+    use std::io::Write;
+    let env = Env::new();
+    let id = "com.test.safe";
+    assert_eq!(env.cli(&["plugin", "new", id, "--json"]).0, 0);
+    let original = std::fs::read(env.plugins_dir.join(id).join("main.js")).unwrap();
+    for scenario in ["traversal", "symlink", "missing", "wrong-root"] {
+        let file = env._dir.path().join(format!("{scenario}.zip"));
+        let mut w = zip::ZipWriter::new(std::fs::File::create(&file).unwrap());
+        let opt = zip::write::SimpleFileOptions::default();
+        let root = if scenario == "wrong-root" {
+            "com.other"
+        } else {
+            id
+        };
+        w.start_file(format!("{root}/manifest.json"), opt).unwrap();
+        w.write_all(format!(r#"{{"id":"{id}","name":"S","version":"1.0.0","entry":"main.js","api_version":"plugin.protocol/v2"}}"#).as_bytes()).unwrap();
+        match scenario {
+            "traversal" => {
+                w.start_file("../escape.js", opt).unwrap();
+                w.write_all(b"x").unwrap();
+            }
+            "symlink" => {
+                w.add_symlink(format!("{id}/main.js"), "/tmp/outside.js", opt)
+                    .unwrap();
+            }
+            "wrong-root" => {
+                w.start_file(format!("{root}/main.js"), opt).unwrap();
+                w.write_all(b"x").unwrap();
+            }
+            _ => {}
+        }
+        w.finish().unwrap();
+        let (code, out) = env.cli(&["plugin", "install", file.to_str().unwrap(), "--json"]);
+        assert_ne!(code, 0, "{scenario}: {out}");
+        assert_eq!(
+            std::fs::read(env.plugins_dir.join(id).join("main.js")).unwrap(),
+            original
+        );
+    }
+    assert!(!env._dir.path().join("escape.js").exists());
+}
+
+#[test]
+fn plugin_pack_relative_path_and_exact_rollback_id() {
+    let env = Env::new();
+    let id = "com.test.foo";
+    assert_eq!(env.cli(&["plugin", "new", id, "--json"]).0, 0);
+    let out = Command::new(env!("CARGO_BIN_EXE_dashboard"))
+        .current_dir(env._dir.path())
+        .env("DASHBOARD_DB_PATH", &env.db_path)
+        .env("DASHBOARD_PLUGINS_DIR", &env.plugins_dir)
+        .env("DASHBOARD_WIDGET_SNAPSHOT_PATH", &env.snap_path)
+        .args(["plugin", "pack", id, "--output", "./relative.zip", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(env._dir.path().join("relative.zip").is_file());
+    std::fs::create_dir_all(env.plugins_dir.join(".backups/com.test.foo-other")).unwrap();
+    assert_eq!(env.cli(&["plugin", "rollback", id, "--json"]).0, 3);
 }

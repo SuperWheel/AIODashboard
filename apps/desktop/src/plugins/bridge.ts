@@ -1,187 +1,104 @@
-// 插件 API 桥：插件能 touch 到的唯一面。所有越权调用在此拒绝（T10），
-// 服务端 Tauri command 再做第二道校验（白名单 / 命名空间 / 审计）。
-// 依赖注入便于单测：coreApi / registry / events 均可替换为测试桩。
-
 import * as React from "react";
+import {
+  createApi,
+  Lifecycle,
+  type PluginApi,
+  type PluginManifest,
+} from "../../../../packages/plugin-sdk/src/index";
 import { api as coreApi } from "../api";
-import { extractHost } from "./manifest";
 import type { CronRegistry } from "./crons";
 import type { EventBus } from "./events";
 import type { ModuleRegistry } from "./registry";
-import type { PluginManifest } from "./types";
-
+export type { PluginApi } from "../../../../packages/plugin-sdk/src/index";
 export interface PluginDeps {
   registry: ModuleRegistry;
   events: EventBus;
   crons: CronRegistry;
-  /** 注册贡献点后通知宿主重渲染 */
   onChanged: () => void;
 }
-
-export interface PluginApi {
-  pluginId: string;
-  /** 宿主共享的 React（createElement / hooks），保证单实例 */
-  react: typeof React;
-  core: {
-    today: () => ReturnType<typeof coreApi.getToday>;
-    listTasks: (scope?: "all" | "active" | "archived") => ReturnType<typeof coreApi.listTasks>;
-    createTask: (title: string, target?: number) => ReturnType<typeof coreApi.createTaskAs>;
-    /** 打卡 +1（幂等） */
-    checkinTask: (id: string) => ReturnType<typeof coreApi.checkinAs>;
-    /** 归档任务（停止打卡，历史保留） */
-    archiveTask: (id: string) => Promise<import("../types").Task>;
-    deleteTask: (id: string) => ReturnType<typeof coreApi.deleteTaskAs>;
-    search: (query: string) => ReturnType<typeof coreApi.searchAll>;
-    addInboxItem: (content: string) => ReturnType<typeof coreApi.addInboxItemAs>;
-    createNote: (title: string, body: string) => ReturnType<typeof coreApi.createNoteAs>;
-  };
-  storage: {
-    kv: {
-      get: (key: string) => Promise<string | null>;
-      set: (key: string, value: string) => Promise<void>;
-      delete: (key: string) => Promise<boolean>;
-      list: (keyPrefix?: string) => Promise<{ key: string; value: string }[]>;
-    };
-  };
-  fetch: (url: string) => Promise<{ status: number; text: string; json: unknown }>;
-  events: {
-    on: (topic: string, handler: (payload: unknown) => void) => () => void;
-    emit: (topic: string, payload: unknown) => void;
-  };
-  /** 注册 cron（Rust 侧驱动，后台不被定时器节流影响）；expr 必须在 manifest 声明 */
-  registerCron: (expr: string, handler: () => void | Promise<void>) => void;
-  ui: {
-    registerTodayCard: (card: {
-      id: string;
-      title: string;
-      /** Bento 占位：sm/md/lg（缺省 md）；非法值视为插件错误 */
-      size?: import("./registry").CardSize;
-      component: React.ComponentType<import("./registry").PluginCardProps>;
-    }) => void;
-    registerView: (view: {
-      id: string;
-      title: string;
-      icon?: string;
-      component: React.ComponentType<import("./registry").PluginViewProps>;
-    }) => void;
-    registerCommand: (cmd: {
-      id: string;
-      title: string;
-      handler: () => void | Promise<void>;
-    }) => void;
-  };
-  log: {
-    info: (msg: string) => void;
-    warn: (msg: string) => void;
-    error: (msg: string) => void;
-  };
-}
-
 export function createPluginApi(
   pluginId: string,
+  token: string,
   manifest: PluginManifest,
   deps: PluginDeps,
+  lifecycle = new Lifecycle(),
 ): PluginApi {
-  const actor = `plugin:${pluginId}`;
-  const perms = manifest.permissions ?? {};
-
-  return {
-    pluginId,
-    react: React,
-
-    core: {
-      today: () => coreApi.getToday(),
-      listTasks: (scope?: "all" | "active" | "archived") => coreApi.listTasks(scope),
-      createTask: (title: string, target?: number) =>
-        coreApi.createTaskAs(actor, title, target),
-      checkinTask: (id: string) => coreApi.checkinAs(actor, id),
-      archiveTask: (id: string) => coreApi.archiveTask(id, actor),
-      deleteTask: (id: string) => coreApi.deleteTaskAs(actor, id),
-      search: (query: string) => coreApi.searchAll(query),
-      addInboxItem: (content: string) => coreApi.addInboxItemAs(actor, content),
-      createNote: (title: string, body: string) =>
-        coreApi.createNoteAs(actor, title, body),
-    },
-
-    storage: {
-      kv: {
-        get: (key: string) => coreApi.pluginKvGet(pluginId, key),
-        set: async (key: string, value: string) => {
-          await coreApi.pluginKvSet(pluginId, key, value);
-        },
-        delete: (key: string) => coreApi.pluginKvDelete(pluginId, key),
-        list: async (keyPrefix?: string) => {
-          const entries = await coreApi.pluginKvList(pluginId, keyPrefix);
-          return entries.map((e) => ({ key: e.key, value: e.value }));
-        },
-      },
-    },
-
-    fetch: async (url: string) => {
-      const host = extractHost(url);
-      if (!host || !(perms.network ?? []).includes(host)) {
-        throw new Error(`network 权限未包含 host '${host ?? "?"}'`);
-      }
-      return coreApi.pluginHttpFetch(pluginId, url);
-    },
-
-    events: {
-      on: (topic: string, handler: (payload: unknown) => void) => {
-        // 领域事件须在 manifest 声明；panel.* 面板事件无需声明
-        if (!topic.startsWith("panel.") && !(perms.events ?? []).includes(topic)) {
-          throw new Error(`events 权限未包含 '${topic}'`);
-        }
-        return deps.events.on(topic, pluginId, handler);
-      },
-      emit: (topic: string, payload: unknown) => deps.events.emit(topic, payload),
-    },
-
-    registerCron: (expr: string, handler: () => void | Promise<void>) => {
-      if (!(perms.cron ?? []).includes(expr)) {
-        throw new Error(`cron 权限未包含 '${expr}'（需在 manifest permissions.cron 声明）`);
-      }
-      deps.crons.on(pluginId, expr, handler);
-    },
-
-    ui: {
-      registerTodayCard: (card) => {
-        if (card.size !== undefined && !["sm", "md", "lg"].includes(card.size)) {
-          throw new Error(`卡片 size 非法: '${card.size}'（可选 "sm" | "md" | "lg"）`);
-        }
-        deps.registry.registerCard({
-          owner: pluginId,
-          id: `${pluginId}.${card.id}`,
-          title: card.title,
-          component: card.component,
-          size: card.size,
-        });
-        deps.onChanged();
-      },
-      registerView: (view) => {
-        deps.registry.registerView({
-          owner: pluginId,
-          key: `${pluginId}.${view.id}`,
-          title: view.title,
-          icon: view.icon ?? "▣",
-          component: view.component,
-        });
-        deps.onChanged();
-      },
-      registerCommand: (cmd) => {
-        deps.registry.registerCommand({
-          owner: pluginId,
-          id: `${pluginId}.${cmd.id}`,
-          title: cmd.title,
-          handler: cmd.handler,
-        });
-        deps.onChanged();
-      },
-    },
-
-    log: {
-      info: (msg: string) => console.info(`[${pluginId}] ${msg}`),
-      warn: (msg: string) => console.warn(`[${pluginId}] ${msg}`),
-      error: (msg: string) => console.error(`[${pluginId}] ${msg}`),
-    },
+  if (pluginId !== manifest.id) throw new Error("插件身份不匹配");
+  const owner = pluginId;
+  const changed = (off: () => void) => {
+    deps.onChanged();
+    return () => {
+      off();
+      deps.onChanged();
+    };
   };
+  return createApi(
+    manifest,
+    {
+      react: React,
+      call: async <T>(method: string, params?: Record<string, unknown>) => {
+        const result = await coreApi.pluginCall<T>(token, method, params);
+        if (lifecycle.active) {
+          const topics: Record<string, string> = {
+            create_task: "task.created",
+            create_note: "note.created",
+            add_inbox_item: "inbox.added",
+          };
+          if (topics[method]) deps.events.emit(topics[method], result);
+          if (
+            method === "checkin_task" &&
+            (result as { state?: string }).state === "completed"
+          )
+            deps.events.emit(
+              "task.completed",
+              (result as { task: unknown }).task,
+            );
+        }
+        return result;
+      },
+      denied: (action) => {
+        deps.events.emit("plugin.denied", { plugin_id: owner, action });
+        void coreApi
+          .pluginCall(token, "denied", { action })
+          .catch(console.error);
+      },
+      on: (topic, handler) => deps.events.on(topic, owner, handler),
+      emit: (topic, payload) => deps.events.emit(topic, payload),
+      cron: (expr, handler) =>
+        deps.crons.on(owner, expr, async () => {
+          await handler();
+        }),
+      card: (card) =>
+        changed(
+          deps.registry.registerCard({
+            ...card,
+            id: `${owner}.${card.id}`,
+            owner,
+          }),
+        ),
+      view: (view) =>
+        changed(
+          deps.registry.registerView({
+            ...view,
+            key: `${owner}.${view.id}`,
+            icon: view.icon ?? "▣",
+            owner,
+          }),
+        ),
+      command: (cmd) =>
+        changed(
+          deps.registry.registerCommand({
+            ...cmd,
+            id: `${owner}.${cmd.id}`,
+            owner,
+            handler: async () => {
+              await cmd.handler();
+            },
+          }),
+        ),
+      settings: (definition) =>
+        changed(deps.registry.registerSettings(owner, definition)),
+    },
+    lifecycle,
+  );
 }

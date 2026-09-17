@@ -28,7 +28,7 @@ Platform       macOS（SQLite WAL 支持多进程并发）
 
 ## AI CLI 协议
 
-- 统一信封：`{ "success": bool, "data": T|null, "error": {code,message}|null, "meta": {"schema_version":"3"} }`
+- 统一信封：`{ "success": bool, "data": T|null, "error": {code,message}|null, "meta": {"schema_version":"6"} }`
 - Exit Code：0/1/2/3/4/5（见 README）
 - `--json` 全局开关；`--stdin` 复杂输入；`--dry-run` 危险操作预览
 - `DASHBOARD_ACTOR` 环境变量标记来源，写入 `activity_log`
@@ -71,7 +71,7 @@ GUI 轮询(4s) + focus 刷新 ──► 读同一数据库 ──► UI 更新
   - context today → 快照文件生成（链路四的前半段）
   - dry-run → 不产生副作用
 
-## 数据库 Schema（V3）
+## 数据库 Schema（V8）
 
 `projects`, `tasks`（打卡式：icon/color_hex/unit/card_style）, `notes`, `inbox_items`,
 `activity_log`, `widget_snapshots`, `plugin_registry`, `plugin_kv`，以及打卡体系五表：
@@ -87,3 +87,17 @@ GUI 轮询(4s) + focus 刷新 ──► 读同一数据库 ──► UI 更新
 - 统计：完整完成率 = 完整完成天数/适用天数；连续天数遇非 complete 即断（不适用日也断）；
   今日完成率 = Σmin(count,target)/Σtarget；重要日完成率 = 当日有效直属任务 min(count/target,1) 均值。
 - 打卡/减少/撤销均写补偿账本；UI 上的 +/- 为圆角矩形同侧并排（设计决策 7）。
+
+## 插件平台（Spec 008）
+
+插件是通过受控 API 调用 Core 的 Trusted WebView 客户端。`plugin_runtime` 在 Core 管理 token、manifest/内容摘要、启用修订和权限；Tauri 只包装命令，不能由插件传入任意 actor/id。GUI 普通 command 拒绝 plugin/cli/ai actor 冒用。这个绑定防止 API 误用，不能隔离共享 WebView 中的恶意 JavaScript。
+
+`plugin_package` 管理普通文件校验、ZIP 限额、跨进程文件锁、安装 journal 与恢复；`plugin_network` 管理 URL/DNS 校验、固定目标地址、GET 和资源限制。V8 在 plugin_registry 增内容摘要、授权摘要、revision 和 install_operation，迁移停用既有插件。安装/升级/回滚后须再次授权。
+
+前端与离线测试桩共用 SDK 权限和 Lifecycle；disposer 清理注册、订阅、cron、SDK 定时器。PluginHost 串行重载、取消失效代；GUI 每 2 秒轮询插件状态指纹，CLI 变更触发自动重载与 cron 重扫。异步导入/onload 有 8 秒限制，同步死循环仍须 CLI safe-mode 后重启。
+
+Core 写入与插件管理操作保留 activity log；网络成功/失败及权限拒绝也审计。高频插件 KV 仅为插件内部状态，不逐键生成 activity/snapshot；领域写入仍走既有 Core 用例的审计与快照。领域事件仅订阅，自定义事件限 `plugin.<id>:<topic>`。声明式设置保存在插件 quota 内的 KV。
+
+桌面插件页通过原生选择器统一导入 ZIP / 目录。`plugin_package::preview_import` 只读生成来源内容摘要与目标状态凭据；`import_checked` 在安装锁内复核后复用安装事务，安装 actor 由宿主固定为 User，CLI 原入口保持 Cli。提交成功后撤销该插件旧上下文、同步 cron 并重载前端贡献，插件默认停用，需重新审阅才能加载。回滚继续通过 CLI。
+
+GUI 同时提供权限确认、完整性/来源状态、启停、重载、设置及停用全部。完整边界与验收见 [PLUGIN_API](PLUGIN_API.md)、[008 tasks](../openspec/changes/008-plugin-security-hardening/tasks.md) 和 [桌面导入 Plan](plans/2026-09-08-plugin-import-entry.md)。

@@ -18,7 +18,11 @@ import DialogHost, { toastError } from "./components/DialogHost";
 import { EventBus, pluginEvents } from "./plugins/events";
 import { CronRegistry } from "./plugins/crons";
 import { ModuleRegistry, type PluginCardProps } from "./plugins/registry";
-import { loadAllPlugins, loadPlugin, type LoadedPlugin, type PluginHostOptions } from "./plugins/loader";
+import {
+  PluginHost,
+  type LoadedPlugin,
+  type PluginHostOptions,
+} from "./plugins/loader";
 import type { PluginInfo } from "./plugins/types";
 
 export default function App() {
@@ -47,7 +51,14 @@ export default function App() {
       key: "today",
       title: "今天",
       icon: "◎",
-      component: (p) => <TodayView data={p.today} onChanged={p.onChanged} onNav={p.onNav} extraCards={p.cards} />,
+      component: (p) => (
+        <TodayView
+          data={p.today}
+          onChanged={p.onChanged}
+          onNav={p.onNav}
+          extraCards={p.cards}
+        />
+      ),
     });
     registry.registerView({
       owner: "core",
@@ -82,7 +93,9 @@ export default function App() {
       key: "projects",
       title: "项目",
       icon: "▤",
-      component: (p) => <ProjectsView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+      component: (p) => (
+        <ProjectsView refreshKey={p.refreshKey} onChanged={p.onChanged} />
+      ),
     });
     registry.registerView({
       owner: "core",
@@ -90,7 +103,11 @@ export default function App() {
       title: "笔记",
       icon: "✎",
       component: (p) => (
-        <NotesView refreshKey={p.refreshKey} onChanged={p.onChanged} navParam={p.navParam} />
+        <NotesView
+          refreshKey={p.refreshKey}
+          onChanged={p.onChanged}
+          navParam={p.navParam}
+        />
       ),
     });
     registry.registerView({
@@ -98,14 +115,23 @@ export default function App() {
       key: "inbox",
       title: "收件箱",
       icon: "⬇",
-      component: (p) => <InboxView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+      component: (p) => (
+        <InboxView refreshKey={p.refreshKey} onChanged={p.onChanged} />
+      ),
     });
     registry.registerView({
       owner: "core",
       key: "plugins",
       title: "插件",
       icon: "⚙",
-      component: (p) => <PluginsView refreshKey={p.refreshKey} onChanged={p.onChanged} />,
+      component: (p) => (
+        <PluginsView
+          refreshKey={p.refreshKey}
+          onChanged={p.onChanged}
+          registry={registry}
+          pluginsRef={pluginsRef}
+        />
+      ),
     });
     registryRef.current = registry;
   }
@@ -123,6 +149,8 @@ export default function App() {
     events: eventsRef.current!,
     crons: cronsRef.current!,
     onChanged: bump,
+    onLoadError: (id, error) =>
+      toastError(`插件 ${id} 加载失败，已停用：${String(error)}`),
   });
 
   // bump = 本地变更信号：刷新数据 + 通知插件（panel.refresh）
@@ -154,53 +182,36 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    loadAllPlugins(hostOpts())
-      .then(({ plugins, pending }) => {
-        if (!cancelled) {
-          pluginsRef.current = plugins;
-          setPendingPlugins(pending);
-          setPluginsVersion((v) => v + 1);
-        }
-      })
-      .catch(console.error);
+    const host = new PluginHost(hostOpts(), ({ plugins, pending }) => {
+      pluginsRef.current = plugins;
+      setPendingPlugins(pending);
+      setPluginsVersion((v) => v + 1);
+      bump();
+    });
+    const poll = () => void host.poll().catch(console.error);
+    const reload = () => void host.reload();
+    poll();
+    const timer = setInterval(poll, 2000);
+    window.addEventListener("reload-plugins", reload);
     return () => {
-      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener("reload-plugins", reload);
+      void host.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Rust cron 调度 → 插件 handler
   useEffect(() => {
-    const unlisten = listen<{ plugin_id: string; expr: string }>("plugin-cron", (e) => {
-      cronsRef.current?.dispatch(e.payload);
-    });
+    const unlisten = listen<{ plugin_id: string; expr: string }>(
+      "plugin-cron",
+      (e) => {
+        cronsRef.current?.dispatch(e.payload);
+      },
+    );
     return () => {
       void unlisten.then((f) => f());
     };
-  }, []);
-
-  // 插件重载（插件页「重载」按钮 / 开发热载入口）
-  useEffect(() => {
-    const onReload = () => {
-      void (async () => {
-        for (const p of pluginsRef.current) {
-          await p.dispose().catch(() => {});
-        }
-        pluginsRef.current = [];
-        const { plugins, pending } = await loadAllPlugins(hostOpts()).catch((e) => {
-          console.error("[plugins] 重载失败:", e);
-          return { plugins: [] as LoadedPlugin[], pending: [] as PluginInfo[] };
-        });
-        pluginsRef.current = plugins;
-        setPendingPlugins(pending);
-        setPluginsVersion((v) => v + 1);
-        bump();
-      })();
-    };
-    window.addEventListener("reload-plugins", onReload);
-    return () => window.removeEventListener("reload-plugins", onReload);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 新插件权限确认
@@ -208,11 +219,8 @@ export default function App() {
     setPendingPlugins((list) => list.filter((p) => p.id !== info.id));
     void (async () => {
       try {
-        await api.pluginSetEnabled(info.id, true);
-        const loaded = await loadPlugin(info.id, hostOpts());
-        pluginsRef.current = [...pluginsRef.current, loaded];
-        setPluginsVersion((v) => v + 1);
-        bump();
+        await api.pluginSetEnabled(info.id, true, info.fingerprint);
+        window.dispatchEvent(new CustomEvent("reload-plugins"));
       } catch (e) {
         console.error(`[plugins] 启用 ${info.id} 失败:`, e);
       }
@@ -277,7 +285,11 @@ export default function App() {
         const props: PluginCardProps = {
           api: apiById.get(c.owner) ?? null,
           onChanged: bump,
-          today,
+          today: pluginsRef.current
+            .find((p) => p.id === c.owner)
+            ?.manifest.permissions?.core?.includes("context.read")
+            ? today
+            : null,
         };
         return (
           <div key={c.id} className={CARD_SPAN[c.size ?? "md"]}>
@@ -298,7 +310,11 @@ export default function App() {
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg">
       <Sidebar
-        items={registry.views.map((v) => ({ key: v.key, label: v.title, icon: v.icon }))}
+        items={registry.views.map((v) => ({
+          key: v.key,
+          label: v.title,
+          icon: v.icon,
+        }))}
         current={activeView.key}
         onNav={nav}
         inboxOpen={today?.open_inbox_count ?? 0}
@@ -318,12 +334,18 @@ export default function App() {
             /* 插件视图包错误边界：插件抛错只降级这一块，不白屏整个面板 */
             <PluginErrorBoundary name={activeView.key} key={activeView.key}>
               <activeView.component
-                today={today}
+                api={apiById.get(activeView.owner)}
+                today={
+                  pluginsRef.current
+                    .find((p) => p.id === activeView.owner)
+                    ?.manifest.permissions?.core?.includes("context.read")
+                    ? today
+                    : null
+                }
                 onChanged={bump}
                 onNav={nav}
                 navParam={navParam}
                 refreshKey={refreshKey}
-                cards={cardsNode ?? undefined}
               />
             </PluginErrorBoundary>
           )}
@@ -354,7 +376,8 @@ export default function App() {
         }}
         commands={registry.commands}
         onRunCommand={(cmd) => {
-          void Promise.resolve(cmd.handler())
+          void Promise.resolve()
+            .then(() => cmd.handler())
             .catch((e) => toastError(`命令执行失败: ${String(e)}`))
             .finally(() => {
               bump();

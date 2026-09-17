@@ -2,7 +2,7 @@
 //!
 //! 面向 AI 的稳定输出协议：
 //! - 统一 JSON 信封 `{ success, data, error, meta.schema_version }`
-//! - 标准 Exit Code（0 成功 / 1 一般错误 / 2 参数错误 / 3 数据不存在 / 5 冲突）
+//! - 标准 Exit Code（0 成功 / 1 一般错误 / 2 参数错误 / 3 数据不存在 / 4 权限拒绝 / 5 冲突）
 //!
 //! ## schema_version 历史
 //! - "1"：todo 式任务（due_at / todo·doing·done）
@@ -15,10 +15,12 @@
 //!   leading_empty_count 恒 0
 //! - "5"：任务星级+手动排序（task-priority-drag，变更包 006）——Task 增 priority/sort_order
 //!   字段，task create/update 增 --priority
+//! - "6"：插件安全加固（变更包 008）——插件列表完整性/授权/修订字段，
+//!   permission_denied 错误和默认停用安装；插件协议 v2，数据库 V8。
 
 use serde::Serialize;
 
-pub const SCHEMA_VERSION: &str = "5";
+pub const SCHEMA_VERSION: &str = "6";
 
 /// 标准 Exit Code。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

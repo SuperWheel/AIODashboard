@@ -17,8 +17,33 @@ import type {
   TaskDayView,
   TodayContext,
 } from "./types";
-import type { PluginInfo, PluginManifest } from "./plugins/types";
+import type {
+  PluginInfo,
+  PluginManifest,
+  PluginImportSourceKind,
+  PluginImportCheck,
+  PluginImportPreview,
+  PluginInstallResult,
+} from "./plugins/types";
 import { pluginEvents } from "./plugins/events";
+
+function pluginInvoke<T>(
+  command: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  return invoke<T>(command, args).catch((e: unknown) => {
+    if (
+      e &&
+      typeof e === "object" &&
+      "code" in e &&
+      e.code === "permission_denied"
+    )
+      pluginEvents.emit("plugin.denied", e);
+    if (e && typeof e === "object" && "message" in e)
+      throw Object.assign(new Error(String(e.message)), e);
+    throw e;
+  });
+}
 
 export interface ProcessReport {
   inbox_id: string;
@@ -60,7 +85,7 @@ export interface UpdateTaskParams {
   icon?: string;
   color?: string;
   cardStyle?: CardStyle;
-  recurrence?: Recurrence;  /** 重要性星级 0–5 */
+  recurrence?: Recurrence; /** 重要性星级 0–5 */
   priority?: number;
   /** 显式 null = 移出项目；不传 = 不修改 */
   projectId?: string | null;
@@ -80,7 +105,8 @@ export const api = {
   // Today / Tasks
   getToday: () => invoke<TodayContext>("get_today"),
   /** 任务墙：全部启用任务在指定逻辑日的视图（含当日不适用）；day 缺省 = 今天 */
-  taskWallViews: (day?: string) => invoke<TaskDayView[]>("task_wall_views", { day: day ?? null }),
+  taskWallViews: (day?: string) =>
+    invoke<TaskDayView[]>("task_wall_views", { day: day ?? null }),
   listTasks: (scope?: "all" | "active" | "archived") =>
     invoke<Task[]>("list_tasks", { scope }),
   /** 归档任务列表（含归档日，归档页用） */
@@ -130,20 +156,41 @@ export const api = {
 
   // Check-in
   taskCheckin: (id: string, actor?: string) =>
-    invoke<TaskDayView>("task_checkin", { id, operationId: null, actor: actor ?? null }).then(
-      (v) => {
-        if (v.state === "completed") {
-          pluginEvents.emit("task.completed", { id: v.task.id, title: v.task.title });
-        }
-        return v;
-      },
-    ),
+    invoke<TaskDayView>("task_checkin", {
+      id,
+      operationId: null,
+      actor: actor ?? null,
+    }).then((v) => {
+      if (v.state === "completed") {
+        pluginEvents.emit("task.completed", {
+          id: v.task.id,
+          title: v.task.title,
+        });
+      }
+      return v;
+    }),
   taskDecrement: (id: string, actor?: string) =>
-    invoke<TaskDayView>("task_decrement", { id, operationId: null, actor: actor ?? null }),
+    invoke<TaskDayView>("task_decrement", {
+      id,
+      operationId: null,
+      actor: actor ?? null,
+    }),
   taskUndo: (id: string, actor?: string) =>
-    invoke<TaskDayView>("task_undo", { id, operationId: null, actor: actor ?? null }),
-  taskOverview: (id: string, period: "week" | "month" | "year", anchor?: string) =>
-    invoke<PeriodOverview>("task_overview", { id, period, anchor: anchor ?? null }),
+    invoke<TaskDayView>("task_undo", {
+      id,
+      operationId: null,
+      actor: actor ?? null,
+    }),
+  taskOverview: (
+    id: string,
+    period: "week" | "month" | "year",
+    anchor?: string,
+  ) =>
+    invoke<PeriodOverview>("task_overview", {
+      id,
+      period,
+      anchor: anchor ?? null,
+    }),
 
   // Date Libraries
   listLibraries: (includeArchived = false) =>
@@ -164,7 +211,16 @@ export const api = {
       icon: params.icon ?? null,
       color: params.color ?? null,
     }),
-  updateLibrary: (id: string, params: { title?: string; note?: string; icon?: string; color?: string; anchorDay?: string }) =>
+  updateLibrary: (
+    id: string,
+    params: {
+      title?: string;
+      note?: string;
+      icon?: string;
+      color?: string;
+      anchorDay?: string;
+    },
+  ) =>
     invoke<DateLibrary>("update_library", {
       id,
       title: params.title ?? null,
@@ -173,14 +229,29 @@ export const api = {
       color: params.color ?? null,
       anchorDay: params.anchorDay ?? null,
     }),
-  archiveLibrary: (id: string, mode: "keep" | "detach" | "move_to", moveTo?: string) =>
-    invoke<DateLibrary>("archive_library", { id, mode, moveTo: moveTo ?? null }),
-  restoreLibrary: (id: string) => invoke<DateLibrary>("restore_library", { id }),
-  libraryTasks: (libraryId: string) => invoke<Task[]>("library_tasks", { libraryId }),
+  archiveLibrary: (
+    id: string,
+    mode: "keep" | "detach" | "move_to",
+    moveTo?: string,
+  ) =>
+    invoke<DateLibrary>("archive_library", {
+      id,
+      mode,
+      moveTo: moveTo ?? null,
+    }),
+  restoreLibrary: (id: string) =>
+    invoke<DateLibrary>("restore_library", { id }),
+  libraryTasks: (libraryId: string) =>
+    invoke<Task[]>("library_tasks", { libraryId }),
   libraryHeatmap: (libraryId: string, anchor?: string) =>
-    invoke<LibraryYearHeatmap>("library_heatmap", { libraryId, anchor: anchor ?? null }),
+    invoke<LibraryYearHeatmap>("library_heatmap", {
+      libraryId,
+      anchor: anchor ?? null,
+    }),
   globalYearHeatmap: (anchor?: string) =>
-    invoke<GlobalYearHeatmap>("global_year_heatmap", { anchor: anchor ?? null }),
+    invoke<GlobalYearHeatmap>("global_year_heatmap", {
+      anchor: anchor ?? null,
+    }),
   moveTaskLibrary: (id: string, libraryId: string | null) =>
     invoke<Task>("move_task_library", { id, libraryId }),
   /** 拖拽落位：priority=null 同档内重排；传 0–5 跨档改级 */
@@ -190,16 +261,6 @@ export const api = {
     beforeId: string | null,
     afterId: string | null,
   ) => invoke<Task>("move_task_position", { id, priority, beforeId, afterId }),
-
-  // 带 actor 的写入（插件桥使用；审计 actor=plugin:<id>）
-  createTaskAs: (actor: string, title: string, target?: number) =>
-    api.createTask({ title, target, actor }),
-  checkinAs: (actor: string, id: string) => api.taskCheckin(id, actor),
-  deleteTaskAs: (actor: string, id: string) =>
-    invoke<void>("delete_task", { id, actor }),
-  createNoteAs: (actor: string, title: string, body: string) =>
-    api.createNote(title, body, actor),
-  addInboxItemAs: (actor: string, content: string) => api.addInboxItem(content, actor),
 
   // Projects
   listProjects: () => invoke<ProjectWithStats[]>("list_projects"),
@@ -217,10 +278,12 @@ export const api = {
   // Notes
   listNotes: (limit = 200) => invoke<Note[]>("list_notes", { limit }),
   createNote: (title: string, body: string, actor?: string) =>
-    invoke<Note>("create_note", { title, body, actor: actor ?? null }).then((n) => {
-      pluginEvents.emit("note.created", { id: n.id, title: n.title });
-      return n;
-    }),
+    invoke<Note>("create_note", { title, body, actor: actor ?? null }).then(
+      (n) => {
+        pluginEvents.emit("note.created", { id: n.id, title: n.title });
+        return n;
+      },
+    ),
   updateNote: (id: string, title: string, body: string) =>
     invoke<Note>("update_note", { id, title, body }),
   deleteNote: (id: string) => invoke<void>("delete_note", { id }),
@@ -229,10 +292,15 @@ export const api = {
   listInbox: (includeProcessed = false) =>
     invoke<InboxItem[]>("list_inbox", { includeProcessed }),
   addInboxItem: (content: string, actor?: string) =>
-    invoke<InboxItem>("add_inbox_item", { content, actor: actor ?? null }).then((item) => {
-      pluginEvents.emit("inbox.added", { id: item.id, content: item.content });
-      return item;
-    }),
+    invoke<InboxItem>("add_inbox_item", { content, actor: actor ?? null }).then(
+      (item) => {
+        pluginEvents.emit("inbox.added", {
+          id: item.id,
+          content: item.content,
+        });
+        return item;
+      },
+    ),
   inboxToTask: (id: string) => invoke<ProcessReport>("inbox_to_task", { id }),
   inboxToNote: (id: string) => invoke<ProcessReport>("inbox_to_note", { id }),
   deleteInboxItem: (id: string) => invoke<void>("delete_inbox_item", { id }),
@@ -241,19 +309,33 @@ export const api = {
   searchAll: (query: string) => invoke<SearchResults>("search_all", { query }),
 
   // Plugins
+  pluginPickImportSource: (kind: PluginImportSourceKind) =>
+    invoke<string | null>("plugin_pick_import_source", { kind }),
+  pluginPreviewImport: (source: string) =>
+    invoke<PluginImportPreview>("plugin_preview_import", { source }),
+  pluginImport: (source: string, check: PluginImportCheck) =>
+    invoke<PluginInstallResult>("plugin_import", { source, check }),
   pluginList: () => invoke<PluginInfo[]>("plugin_list"),
-  pluginReadManifest: (id: string) => invoke<PluginManifest>("plugin_read_manifest", { id }),
-  pluginSetEnabled: (id: string, enabled: boolean) =>
-    invoke<void>("plugin_set_enabled", { id, enabled }),
-  pluginLoadSource: (id: string) => invoke<string>("plugin_load_source", { id }),
-  pluginKvGet: (pluginId: string, key: string) =>
-    invoke<string | null>("plugin_kv_get", { pluginId, key }),
-  pluginKvSet: (pluginId: string, key: string, value: string) =>
-    invoke<void>("plugin_kv_set", { pluginId, key, value }),
-  pluginKvDelete: (pluginId: string, key: string) =>
-    invoke<boolean>("plugin_kv_delete", { pluginId, key }),
-  pluginKvList: (pluginId: string, keyPrefix?: string) =>
-    invoke<PluginKvEntry[]>("plugin_kv_list", { pluginId, keyPrefix: keyPrefix ?? null }),
-  pluginHttpFetch: (pluginId: string, url: string) =>
-    invoke<PluginFetchResult>("plugin_http_fetch", { pluginId, url }),
+  pluginReadManifest: (id: string) =>
+    invoke<PluginManifest>("plugin_read_manifest", { id }),
+  pluginSetEnabled: (id: string, enabled: boolean, fingerprint?: string) =>
+    invoke<void>("plugin_set_enabled", { id, enabled, fingerprint }),
+  pluginDisableAll: () => invoke<void>("plugin_disable_all"),
+  pluginOpenContext: (id: string) =>
+    pluginInvoke<{
+      token: string;
+      plugin_id: string;
+      manifest: PluginManifest;
+      fingerprint: string;
+      revision: number;
+    }>("plugin_open_context", { id }),
+  pluginCloseContext: (token: string) =>
+    invoke<void>("plugin_close_context", { token }),
+  pluginLoadSource: (token: string) =>
+    pluginInvoke<string>("plugin_load_source", { token }),
+  pluginCall: <T>(
+    token: string,
+    method: string,
+    params: Record<string, unknown> = {},
+  ) => pluginInvoke<T>("plugin_call", { token, call: { ...params, method } }),
 };

@@ -2,9 +2,14 @@
   "id": "com.leeyl.echo",
   "name": "Echo 示例",
   "version": "0.1.0",
+  "api_version": "plugin.protocol/v2",
   "entry": "main.js",
   "description": "插件系统最小示例：KV 计数 + Today 卡片注册",
-  "permissions": {},
+  "permissions": {
+    "core": ["context.read"],
+    "ui": ["today_card"],
+    "storage_quota_bytes": 1048576
+  },
   "contributions": {
     "today_cards": [{ "id": "echo-card" }]
   }

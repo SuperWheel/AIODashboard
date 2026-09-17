@@ -16,7 +16,7 @@ export class CronRegistry {
   }
 
   /** 注册（expr 已在桥层做过 manifest 权限校验）。 */
-  on(owner: string, expr: string, handler: CronHandler): void {
+  on(owner: string, expr: string, handler: CronHandler): () => void {
     const k = this.key(owner, expr);
     let set = this.handlers.get(k);
     if (!set) {
@@ -24,6 +24,10 @@ export class CronRegistry {
       this.handlers.set(k, set);
     }
     set.add(handler);
+    return () => {
+      set?.delete(handler);
+      if (set?.size === 0) this.handlers.delete(k);
+    };
   }
 
   offOwner(owner: string): void {
@@ -39,10 +43,16 @@ export class CronRegistry {
     for (const h of [...set]) {
       try {
         void Promise.resolve(h()).catch((e) =>
-          console.error(`[plugin-cron] ${fire.plugin_id} '${fire.expr}' handler 抛错:`, e),
+          console.error(
+            `[plugin-cron] ${fire.plugin_id} '${fire.expr}' handler 抛错:`,
+            e,
+          ),
         );
       } catch (e) {
-        console.error(`[plugin-cron] ${fire.plugin_id} '${fire.expr}' handler 同步抛错:`, e);
+        console.error(
+          `[plugin-cron] ${fire.plugin_id} '${fire.expr}' handler 同步抛错:`,
+          e,
+        );
       }
     }
   }

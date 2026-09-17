@@ -8,6 +8,18 @@ use crate::timeutil::{read_time, write_time};
 
 const REG_COLS: &str = "id, enabled, installed_at";
 
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct PluginInstallMetadata {
+    pub source: String,
+    pub sha256: Option<String>,
+    pub installed_version: Option<String>,
+    pub previous_version: Option<String>,
+    pub content_sha256: Option<String>,
+    pub approved_sha256: Option<String>,
+    pub revision: i64,
+    pub install_operation: Option<String>,
+}
+
 fn map_registration(row: &Row) -> rusqlite::Result<PluginRegistration> {
     Ok(PluginRegistration {
         id: row.get(0)?,
@@ -23,7 +35,7 @@ pub fn ensure_registered(
     at: DateTime<Utc>,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO plugin_registry (id, enabled, installed_at) VALUES (?1, 1, ?2)
+        "INSERT INTO plugin_registry (id, enabled, installed_at) VALUES (?1, 0, ?2)
          ON CONFLICT(id) DO NOTHING",
         params![plugin_id, write_time(at)],
     )?;
@@ -45,7 +57,7 @@ pub fn get_registration(
 /// 返回受影响行数：0 表示插件未注册（NotFound 判定在 core 层做）。
 pub fn set_enabled(conn: &Connection, plugin_id: &str, enabled: bool) -> rusqlite::Result<usize> {
     conn.execute(
-        "UPDATE plugin_registry SET enabled = ?2 WHERE id = ?1",
+        "UPDATE plugin_registry SET enabled = ?2, revision = revision + 1 WHERE id = ?1",
         params![plugin_id, enabled as i64],
     )
 }
@@ -56,6 +68,41 @@ pub fn list_registrations(conn: &Connection) -> rusqlite::Result<Vec<PluginRegis
     ))?;
     let rows = stmt.query_map([], map_registration)?;
     rows.collect()
+}
+
+pub fn update_install_metadata(
+    conn: &Connection,
+    plugin_id: &str,
+    source: &str,
+    sha256: &str,
+    installed_version: &str,
+    previous_version: Option<&str>,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE plugin_registry SET source = ?2, sha256 = ?3, installed_version = ?4, previous_version = ?5 WHERE id = ?1",
+        params![plugin_id, source, sha256, installed_version, previous_version],
+    )?;
+    Ok(())
+}
+
+pub fn install_metadata(
+    conn: &Connection,
+    plugin_id: &str,
+) -> rusqlite::Result<Option<PluginInstallMetadata>> {
+    conn.query_row(
+        "SELECT source, sha256, installed_version, previous_version, content_sha256, approved_sha256, revision, install_operation FROM plugin_registry WHERE id = ?1",
+        params![plugin_id],
+        |r| {
+            Ok(PluginInstallMetadata {
+                source: r.get(0)?,
+                sha256: r.get(1)?,
+                installed_version: r.get(2)?,
+                previous_version: r.get(3)?,
+                content_sha256: r.get(4)?, approved_sha256: r.get(5)?,
+                revision: r.get(6)?, install_operation: r.get(7)?,
+            })
+        },
+    ).optional()
 }
 
 pub fn kv_get(conn: &Connection, plugin_id: &str, key: &str) -> rusqlite::Result<Option<String>> {
@@ -91,6 +138,45 @@ pub fn kv_list(conn: &Connection, plugin_id: &str) -> rusqlite::Result<Vec<(Stri
         conn.prepare("SELECT key, value FROM plugin_kv WHERE plugin_id = ?1 ORDER BY key ASC")?;
     let rows = stmt.query_map(params![plugin_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
     rows.collect()
+}
+
+/// 插件 KV 当前占用的 UTF-8 字节数（键和值均计入）。
+pub fn kv_usage_bytes(conn: &Connection, plugin_id: &str) -> rusqlite::Result<usize> {
+    conn.query_row(
+        "SELECT COALESCE(SUM(length(CAST(key AS BLOB)) + length(CAST(value AS BLOB))), 0)
+         FROM plugin_kv WHERE plugin_id = ?1",
+        params![plugin_id],
+        |r| r.get::<_, i64>(0).map(|n| n.max(0) as usize),
+    )
+}
+
+/// 所有插件数据写入使用立即事务，避免 quota 的读-写竞争。
+pub fn immediate<T, E: From<rusqlite::Error>>(
+    conn: &Connection,
+    f: impl FnOnce(&Connection) -> Result<T, E>,
+) -> Result<T, E> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    let out = f(&tx)?;
+    tx.commit()?;
+    Ok(out)
+}
+
+pub fn approve(conn: &Connection, id: &str, hash: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE plugin_registry SET approved_sha256=?2 WHERE id=?1",
+        params![id, hash],
+    )?;
+    Ok(())
+}
+
+pub fn save_install(
+    conn: &Connection,
+    id: &str,
+    m: &PluginInstallMetadata,
+) -> rusqlite::Result<()> {
+    conn.execute("UPDATE plugin_registry SET source=?2, sha256=?3, installed_version=?4, previous_version=?5, content_sha256=?6, approved_sha256=NULL, revision=revision+1, enabled=0, install_operation=?7 WHERE id=?1",
+        params![id,m.source,m.sha256,m.installed_version,m.previous_version,m.content_sha256,m.install_operation])?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -163,7 +249,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 6);
+        assert_eq!(v, 8);
 
         // 旧数据完整
         let old = crate::task_repo::get(&conn, "tsk_old").unwrap();
@@ -190,7 +276,7 @@ mod tests {
         let list = list_registrations(&conn).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].id, "com.a");
-        assert!(list[0].enabled);
+        assert!(!list[0].enabled);
         assert!(!list[1].enabled);
 
         set_enabled(&conn, "com.b", true).unwrap();

@@ -1,18 +1,28 @@
 {
   "id": "com.leeyl.pomodoro",
   "name": "番茄钟",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "api_version": "plugin.protocol/v2",
+  "min_host_version": "0.1.0",
   "entry": "main.js",
-  "description": "25 分钟专注番茄钟：KV 持久化、完成任务自动开始、Today 卡片 + 独立视图 + ⌘K 命令",
+  "author": "leeyl",
+  "license": "MIT",
+  "description": "完整番茄钟周期：专注 / 短休 / 长休、暂停继续、可配置时长；圆环倒计时 + Today 卡片 + 独立视图 + ⌘K 命令",
   "permissions": {
-    "events": ["task.completed"]
+    "ui": ["today_card", "view", "command", "settings"],
+    "storage_quota_bytes": 1048576
   },
   "contributions": {
     "today_cards": [{ "id": "card" }],
     "views": [{ "id": "view", "title": "番茄钟" }],
     "commands": [
-      { "id": "start", "title": "开始一个番茄钟" },
-      { "id": "stop", "title": "放弃当前番茄钟" }
-    ]
+      { "id": "start_focus", "title": "开始专注" },
+      { "id": "start_short", "title": "开始短休" },
+      { "id": "start_long", "title": "开始长休" },
+      { "id": "toggle_pause", "title": "暂停 / 继续番茄钟" },
+      { "id": "skip", "title": "跳过当前番茄" },
+      { "id": "reset", "title": "重置番茄钟" }
+    ],
+    "settings": [{ "id": "preferences", "title": "番茄钟设置" }]
   }
 }

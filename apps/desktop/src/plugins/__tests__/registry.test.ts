@@ -17,15 +17,37 @@ describe("ModuleRegistry", () => {
     r.registerCard(card("com.a", "com.a.card"));
     expect(r.cards).toHaveLength(1);
 
-    r.registerView({ owner: "core", key: "today", title: "今天", icon: "◎", component: () => null });
+    r.registerView({
+      owner: "core",
+      key: "today",
+      title: "今天",
+      icon: "◎",
+      component: () => null,
+    });
     expect(r.hasView("today")).toBe(true);
     expect(() =>
-      r.registerView({ owner: "core", key: "today", title: "重复", icon: "◎", component: () => null }),
+      r.registerView({
+        owner: "core",
+        key: "today",
+        title: "重复",
+        icon: "◎",
+        component: () => null,
+      }),
     ).toThrow(/冲突/);
 
-    r.registerCommand({ owner: "com.a", id: "com.a.cmd", title: "命令", handler: () => {} });
+    r.registerCommand({
+      owner: "com.a",
+      id: "com.a.cmd",
+      title: "命令",
+      handler: () => {},
+    });
     expect(() =>
-      r.registerCommand({ owner: "com.b", id: "com.a.cmd", title: "冲突", handler: () => {} }),
+      r.registerCommand({
+        owner: "com.b",
+        id: "com.a.cmd",
+        title: "冲突",
+        handler: () => {},
+      }),
     ).toThrow(/冲突/);
   });
 
@@ -34,8 +56,19 @@ describe("ModuleRegistry", () => {
     r.registerCard(card("com.a", "com.a.card1"));
     r.registerCard(card("com.a", "com.a.card2"));
     r.registerCard(card("com.b", "com.b.card"));
-    r.registerView({ owner: "com.a", key: "com.a.view", title: "V", icon: "▣", component: () => null });
-    r.registerCommand({ owner: "com.a", id: "com.a.cmd", title: "C", handler: () => {} });
+    r.registerView({
+      owner: "com.a",
+      key: "com.a.view",
+      title: "V",
+      icon: "▣",
+      component: () => null,
+    });
+    r.registerCommand({
+      owner: "com.a",
+      id: "com.a.cmd",
+      title: "C",
+      handler: () => {},
+    });
 
     r.unregisterOwner("com.a");
 

@@ -31,7 +31,9 @@ describe("CronRegistry", () => {
     crons.on("com.a", "*", badAsync);
     crons.on("com.a", "*", ok);
 
-    expect(() => crons.dispatch({ plugin_id: "com.a", expr: "*" })).not.toThrow();
+    expect(() =>
+      crons.dispatch({ plugin_id: "com.a", expr: "*" }),
+    ).not.toThrow();
     expect(ok).toHaveBeenCalledOnce();
   });
 

@@ -35,7 +35,9 @@ export class EventBus {
   emit(topic: string, payload: unknown): void {
     for (const sub of [...(this.subs.get(topic) ?? [])]) {
       try {
-        sub.handler(payload);
+        void Promise.resolve(sub.handler(payload)).catch((e) =>
+          console.error(`[plugin-events] ${topic}`, e),
+        );
       } catch (e) {
         console.error(`[plugin-events] '${topic}' 的 handler 抛错:`, e);
       }

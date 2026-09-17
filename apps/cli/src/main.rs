@@ -370,28 +370,58 @@ enum ContextCmd {
 
 #[derive(Subcommand)]
 enum PluginCmd {
+    /// 停用全部插件；用于故障逃生，重启应用后生效
+    SafeMode,
     /// 列出插件（磁盘发现 ∪ 注册表状态）
     List,
     /// 启用插件（未注册但磁盘合法的插件会先登记）
     Enable { id: String },
     /// 停用插件
     Disable { id: String },
-    /// 创建插件脚手架（零工具链 JS 模板，写入插件目录）
-    New { id: String },
+    /// 创建插件脚手架（默认 JS；可选 TS）
+    New {
+        id: String,
+        /// 模板类型：js 或 ts
+        #[arg(long, default_value = "js")]
+        template: String,
+    },
     /// 校验插件并打印开发信息（manifest / 权限 / 贡献点 / 入口）
     Dev {
         /// 只检查该插件；缺省检查全部已发现插件
         id: Option<String>,
+        /// 执行当前可信插件的 npm build/test（先在插件目录 npm install）
+        #[arg(long)]
+        run: bool,
     },
+    /// 将插件目录打包为 zip
+    Pack {
+        id: String,
+        #[arg(long)]
+        output: Option<std::path::PathBuf>,
+    },
+    /// 从本地目录或 zip 安全导入插件（默认停用）
+    Install {
+        archive: std::path::PathBuf,
+        #[arg(long)]
+        sha256: Option<String>,
+    },
+    /// 恢复最近一次安装前的插件版本
+    Rollback { id: String },
 }
 
 const SCAFFOLD_MANIFEST: &str = r#"{
   "id": "{ID}",
   "name": "{ID}",
   "version": "0.1.0",
+  "api_version": "plugin.protocol/v2",
+  "min_host_version": "0.1.0",
   "entry": "main.js",
   "description": "TODO: 一句话描述这个插件",
-  "permissions": {},
+  "permissions": {
+    "core": ["task.read"],
+    "ui": ["today_card", "command"],
+    "storage_quota_bytes": 1048576
+  },
   "contributions": {
     "today_cards": [{ "id": "card" }],
     "commands": [{ "id": "hello", "title": "{ID} · 你好" }]
@@ -410,9 +440,9 @@ export async function onload(api) {
     component: (props) =>
       h(
         "div",
-        { className: "rounded-xl border border-white/10 bg-[#161a22] px-4 py-3" },
-        h("div", { className: "text-xs font-medium text-emerald-300" }, "{ID}"),
-        h("div", { className: "mt-1 text-xs text-slate-400" }, "编辑 main.js 后在「插件」页点「重载」即可热更新。"),
+        { className: "rounded-2xl border border-line bg-surface px-4 py-3" },
+        h("div", { className: "text-xs font-medium text-accent" }, "{ID}"),
+        h("div", { className: "mt-1 text-xs text-ink2" }, "编辑 main.js 后在「插件」页点「重载」即可热更新。"),
       ),
   });
 
@@ -437,29 +467,103 @@ const SCAFFOLD_AGENTS: &str = r#"# {ID}（AI 开发说明）
 
 ## Plugin API
 - `api.react`：宿主共享单实例 React（createElement / hooks）
-- `api.core`：today / listTasks / createTask / setTaskStatus / deleteTask / search / addInboxItem / createNote（写操作 actor=plugin:<id> 入审计）
-- `api.storage.kv`：get / set / delete / list（按插件命名空间隔离，跨重启持久）
+- `api.core`：today / listTasks / createTask / checkinTask / archiveTask / deleteTask / search / addInboxItem / createNote（按 `permissions.core` 声明能力，写操作 actor=plugin:<id> 入审计）
+- `api.storage.kv`：get / set / delete / list（需声明 storage_quota_bytes，按插件命名空间隔离）
 - `api.fetch(url)`：host 必须在 permissions.network 白名单
 - `api.events.on(topic, fn)`：领域事件需 permissions.events 声明；panel.refresh/show/hide 豁免
 - `api.registerCron(expr, fn)`：expr 需 permissions.cron 声明（Rust 侧驱动，后台不受定时器节流影响）
-- `api.ui`：registerTodayCard / registerView / registerCommand
+- `api.ui`：registerTodayCard / registerView / registerCommand / registerSettings（注册返回 disposer）
 - `api.log.info|warn|error`
+- 新 manifest 应声明 `api_version: plugin.protocol/v2`、`permissions.core` 和 `permissions.ui`。
 
 ## 推荐模式
 权威状态存 kv 时间戳（而非组件内存）：重启、托盘后台均一致。组件内 interval 只管渲染。
 
 ## 验证
-面板「插件」页 → 重载；或 `dashboard plugin dev {ID}` 校验、`dashboard activity --limit 20` 查审计。
+先 npm install，再 `dashboard plugin dev {ID} --run` 构建并测试；面板「插件」页审阅权限后启用；`dashboard activity --limit 20` 查审计。
 "#;
 
-fn write_scaffold(dir: &std::path::Path, id: &str) -> CoreResult<()> {
-    let manifest = SCAFFOLD_MANIFEST.replace("{ID}", id);
-    let main_js = SCAFFOLD_MAIN.replace("{ID}", id);
-    let agents = SCAFFOLD_AGENTS.replace("{ID}", id);
-    std::fs::write(dir.join("manifest.json"), manifest)
-        .and_then(|_| std::fs::write(dir.join("main.js"), main_js))
-        .and_then(|_| std::fs::write(dir.join("AGENTS.md"), agents))
-        .map_err(|e| CoreError::Validation(format!("写入脚手架失败: {e}")))?;
+fn write_scaffold(dir: &std::path::Path, id: &str, template: &str) -> CoreResult<()> {
+    if !matches!(template, "js" | "ts") {
+        return Err(CoreError::Validation("template 必须是 js 或 ts".into()));
+    }
+    let write = |name: &str, content: &str| -> CoreResult<()> {
+        let path = dir.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| CoreError::Validation(e.to_string()))?;
+        }
+        std::fs::write(path, content).map_err(|e| CoreError::Validation(e.to_string()))
+    };
+    write("manifest.json", &SCAFFOLD_MANIFEST.replace("{ID}", id))?;
+    write("main.js", &SCAFFOLD_MAIN.replace("{ID}", id))?;
+    if template == "ts" {
+        write(
+            "main.ts",
+            &format!(
+                "import type {{ PluginApi }} from '@aiodashboard/plugin-sdk';\n{}",
+                SCAFFOLD_MAIN
+                    .replace("{ID}", id)
+                    .replace("onload(api)", "onload(api: PluginApi)")
+            ),
+        )?;
+    }
+    write("AGENTS.md", &SCAFFOLD_AGENTS.replace("{ID}", id))?;
+    write("README.md","# 本地可信插件\n\n先 `npm install`，再 `npm run build` 与 `npm test`。可使用 `dashboard plugin dev <id> --run`。\n未声明能力一律拒绝；修改后在插件页审阅权限再启用。插件与宿主共享 WebView，只运行可信代码。\n")?;
+    write("LICENSE", "MIT License\n\nCopyright (c) Plugin author\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the Software), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n")?;
+    write(
+        "vendor/plugin-sdk/src/index.ts",
+        include_str!("../../../packages/plugin-sdk/src/index.ts"),
+    )?;
+    write(
+        "vendor/plugin-sdk/src/data.ts",
+        include_str!("../../../packages/plugin-sdk/src/data.ts"),
+    )?;
+    write(
+        "vendor/plugin-sdk/package.json",
+        include_str!("../../../packages/plugin-sdk/package.json"),
+    )?;
+    write(
+        "vendor/plugin-sdk/tsconfig.json",
+        include_str!("../../../packages/plugin-sdk/tsconfig.json"),
+    )?;
+    write(
+        "vendor/plugin-test/src/index.ts",
+        include_str!("../../../packages/plugin-test/src/index.ts"),
+    )?;
+    write(
+        "vendor/plugin-test/package.json",
+        include_str!("../../../packages/plugin-test/package.json"),
+    )?;
+    write(
+        "vendor/plugin-test/tsconfig.json",
+        include_str!("../../../packages/plugin-test/tsconfig.json"),
+    )?;
+    let entry_build = if template == "ts" {
+        "tsc --noEmit -p tsconfig.json && esbuild main.ts --bundle --format=esm --external:react --external:@tauri-apps/* --outfile=main.js"
+    } else {
+        "node --check main.js"
+    };
+    write("package.json",&json!({"private":true,"type":"module","scripts":{"build":format!("tsc -p vendor/plugin-sdk && tsc -p vendor/plugin-test && {entry_build}"),"test":"node --test smoke.test.mjs"},"dependencies":{"@aiodashboard/plugin-sdk":"file:vendor/plugin-sdk","@aiodashboard/plugin-test":"file:vendor/plugin-test","react":"^18.3.1"},"devDependencies":{"typescript":"^5.6.2","@types/react":"^18.3.3","esbuild":"^0.25.0"}}).to_string())?;
+    write(
+        "tsconfig.json",
+        r#"{"compilerOptions":{"target":"ES2022","module":"NodeNext","moduleResolution":"NodeNext","strict":true,"skipLibCheck":true,"noEmit":true},"include":["main.ts"]}"#,
+    )?;
+    write(
+        "smoke.test.mjs",
+        r#"import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {createPluginTestContext} from '@aiodashboard/plugin-test';
+import {onload,onunload} from './main.js';
+test('load, contributions and disposal',async()=>{
+ const manifest=JSON.parse(await readFile(new URL('./manifest.json',import.meta.url),'utf8'));
+ const ctx=createPluginTestContext(manifest);
+ try {await onload(ctx.api);assert.ok(ctx.commands.size+ctx.cards.size+ctx.views.size>0);}
+ finally {ctx.dispose();await onunload?.();}
+ assert.equal(ctx.commands.size+ctx.cards.size+ctx.views.size,0);
+});
+"#,
+    )?;
     Ok(())
 }
 
@@ -482,6 +586,7 @@ fn code_str(e: &CoreError) -> &'static str {
         CoreError::Validation(_) => "validation",
         CoreError::Conflict(_) => "conflict",
         CoreError::Storage(_) => "internal",
+        CoreError::PermissionDenied(_) => "permission_denied",
     }
 }
 
@@ -491,6 +596,7 @@ fn exit_code_of(e: &CoreError) -> i32 {
         CoreError::Validation(_) => ExitCode::UsageError,
         CoreError::Conflict(_) => ExitCode::Conflict,
         CoreError::Storage(_) => ExitCode::GeneralError,
+        CoreError::PermissionDenied(_) => ExitCode::PermissionDenied,
     };
     i32::from(c)
 }
@@ -1458,7 +1564,7 @@ fn plugin_cmd(cmd: PluginCmd) -> CoreResult<Out> {
                 data: json!({ "id": id, "enabled": false }),
             })
         }
-        PluginCmd::New { id } => {
+        PluginCmd::New { id, template } => {
             plugin_service::validate_plugin_id(&id)?;
             let dir = plugin_manifest::plugins_root().join(&id);
             if dir.exists() {
@@ -1469,7 +1575,7 @@ fn plugin_cmd(cmd: PluginCmd) -> CoreResult<Out> {
             }
             std::fs::create_dir_all(&dir)
                 .map_err(|e| CoreError::Validation(format!("创建目录失败: {e}")))?;
-            write_scaffold(&dir, &id)?;
+            write_scaffold(&dir, &id, &template)?;
             Ok(Out {
                 text: format!(
                     "已创建插件脚手架 {}\n下一步：编辑 main.js 实现功能，然后在面板「插件」页启用并重载。",
@@ -1478,14 +1584,20 @@ fn plugin_cmd(cmd: PluginCmd) -> CoreResult<Out> {
                 data: json!({ "id": id, "dir": dir.display().to_string() }),
             })
         }
-        PluginCmd::Dev { id } => {
+        PluginCmd::Dev { id, run } => {
             let root = plugin_manifest::plugins_root();
             let targets: Vec<String> = match id {
                 Some(one) => vec![one],
-                None => plugin_manifest::scan_plugins_dir(&root)
-                    .iter()
-                    .filter_map(|d| d.manifest.as_ref().map(|m| m.id.clone()))
-                    .collect(),
+                None => {
+                    let scanned = plugin_manifest::scan_plugins_dir(&root);
+                    if let Some(d) = scanned.iter().find(|d| d.error.is_some()) {
+                        return Err(CoreError::Validation(d.error.clone().unwrap_or_default()));
+                    }
+                    scanned
+                        .into_iter()
+                        .filter_map(|d| d.manifest.map(|m| m.id))
+                        .collect()
+                }
             };
             if targets.is_empty() {
                 return Err(CoreError::NotFound("plugin（插件目录为空）".into()));
@@ -1493,11 +1605,29 @@ fn plugin_cmd(cmd: PluginCmd) -> CoreResult<Out> {
             let mut text = String::new();
             let mut report: Vec<Value> = Vec::new();
             for t in &targets {
+                plugin_service::validate_plugin_id(t)?;
                 let dir = root.join(t);
                 if !dir.is_dir() {
                     return Err(CoreError::NotFound(format!("plugin {t}")));
                 }
+                if run {
+                    for script in ["build", "test"] {
+                        let out = std::process::Command::new("npm")
+                            .args(["run", script])
+                            .current_dir(&dir)
+                            .output()
+                            .map_err(|e| CoreError::Validation(e.to_string()))?;
+                        if !out.status.success() {
+                            return Err(CoreError::Validation(format!(
+                                "npm {script} 失败: {} {}",
+                                String::from_utf8_lossy(&out.stdout),
+                                String::from_utf8_lossy(&out.stderr)
+                            )));
+                        }
+                    }
+                }
                 let m = plugin_manifest::load_from_dir(&dir)?;
+                plugin_manifest::require_current(&m)?;
                 let entry_bytes = std::fs::metadata(dir.join(&m.entry))
                     .map_err(|e| CoreError::Validation(format!("读取入口文件失败: {e}")))?
                     .len();
@@ -1518,7 +1648,7 @@ fn plugin_cmd(cmd: PluginCmd) -> CoreResult<Out> {
                 report.push(json!({
                     "id": m.id, "version": m.version, "entry": m.entry,
                     "entry_bytes": entry_bytes,
-                    "permissions": { "network": perms.network, "events": perms.events, "cron": perms.cron },
+                    "permissions": perms, "build_and_tests_run":run,
                     "contributions": {
                         "today_cards": contrib.today_cards.len(),
                         "views": contrib.views.len(),
@@ -1529,6 +1659,49 @@ fn plugin_cmd(cmd: PluginCmd) -> CoreResult<Out> {
             Ok(Out {
                 text,
                 data: json!(report),
+            })
+        }
+        PluginCmd::Pack { id, output } => {
+            let conn = util::open_conn()?;
+            let root = plugin_manifest::plugins_root();
+            let out = output.unwrap_or_else(|| std::path::PathBuf::from(format!("{id}.zip")));
+            let data = dashboard_core::plugin_package::pack(&conn, &root, &id, &out)?;
+            Ok(Out {
+                text: format!("已打包 {}", data["archive"]),
+                data,
+            })
+        }
+        PluginCmd::Install { archive, sha256 } => {
+            let conn = util::open_conn()?;
+            let result = dashboard_core::plugin_package::install(
+                &conn,
+                &plugin_manifest::plugins_root(),
+                &archive,
+                sha256.as_deref(),
+            )?;
+            Ok(Out {
+                text: format!("已安装 {}（停用）；审阅权限后使用 plugin enable", result.id),
+                data: json!(result),
+            })
+        }
+        PluginCmd::Rollback { id } => {
+            let conn = util::open_conn()?;
+            let result = dashboard_core::plugin_package::rollback(
+                &conn,
+                &plugin_manifest::plugins_root(),
+                &id,
+            )?;
+            Ok(Out {
+                text: format!("已回滚 {id}（停用）；审阅权限后再启用"),
+                data: json!(result),
+            })
+        }
+        PluginCmd::SafeMode => {
+            let conn = util::open_conn()?;
+            plugin_service::disable_all(&conn, &plugin_manifest::plugins_root(), actor())?;
+            Ok(Out {
+                text: "已停用全部插件。若窗口被同步死循环阻塞，退出并重启应用。".into(),
+                data: json!({"safe_mode":true}),
             })
         }
     }

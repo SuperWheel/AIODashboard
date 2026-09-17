@@ -84,8 +84,34 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         // 拖拽看似无效。按星级档内 created_at 顺序补齐为 1024 步进。
         conn.execute_batch(SCHEMA_V6)?;
     }
+    if version < 7 {
+        let has_registry: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='plugin_registry')",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_registry {
+            conn.execute_batch(SCHEMA_V7)?;
+        } else {
+            conn.execute_batch("BEGIN; CREATE TABLE IF NOT EXISTS plugin_registry (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)), installed_at TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'local', sha256 TEXT, installed_version TEXT, previous_version TEXT); PRAGMA user_version = 7; COMMIT;")?;
+        }
+    }
+    if version < 8 {
+        conn.execute_batch(SCHEMA_V8)?;
+    }
     Ok(())
 }
+
+const SCHEMA_V8: &str = r#"
+BEGIN;
+ALTER TABLE plugin_registry ADD COLUMN content_sha256 TEXT;
+ALTER TABLE plugin_registry ADD COLUMN approved_sha256 TEXT;
+ALTER TABLE plugin_registry ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plugin_registry ADD COLUMN install_operation TEXT;
+UPDATE plugin_registry SET enabled = 0;
+PRAGMA user_version = 8;
+COMMIT;
+"#;
 
 /// V4 仅加列：`task_target_periods.recurrence`（JSON；NULL = daily，见 domain::Recurrence）。
 const SCHEMA_V4: &str = r#"
@@ -118,6 +144,17 @@ BEGIN;
 ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE tasks ADD COLUMN sort_order REAL NOT NULL DEFAULT 0;
 PRAGMA user_version = 5;
+COMMIT;
+"#;
+
+/// V7：插件安装来源、版本和完整性元数据。
+const SCHEMA_V7: &str = r#"
+BEGIN;
+ALTER TABLE plugin_registry ADD COLUMN source TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE plugin_registry ADD COLUMN sha256 TEXT;
+ALTER TABLE plugin_registry ADD COLUMN installed_version TEXT;
+ALTER TABLE plugin_registry ADD COLUMN previous_version TEXT;
+PRAGMA user_version = 7;
 COMMIT;
 "#;
 
@@ -348,7 +385,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 6);
+        assert_eq!(v, 8);
         // 回填后：同档内按 created_at 递增、1024 步进、互不相同
         let mut stmt = conn
             .prepare("SELECT id, sort_order FROM tasks ORDER BY sort_order ASC")

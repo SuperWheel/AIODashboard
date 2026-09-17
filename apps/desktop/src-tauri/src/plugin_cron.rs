@@ -21,6 +21,7 @@ pub const CRON_EVENT: &str = "plugin-cron";
 #[derive(Default)]
 pub struct CronScheduler {
     stop_flags: Mutex<Vec<Arc<AtomicBool>>>,
+    fingerprint: Mutex<String>,
 }
 
 fn lock_flags(
@@ -31,6 +32,18 @@ fn lock_flags(
 }
 
 impl CronScheduler {
+    pub fn sync(&self, app: &AppHandle, infos: &[core::plugin_service::PluginInfo]) {
+        let fingerprint = infos
+            .iter()
+            .map(|p| format!("{}:{:?}:{}:{}", p.id, p.enabled, p.revision, p.fingerprint))
+            .collect::<Vec<_>>()
+            .join("|");
+        let mut previous = self.fingerprint.lock().unwrap_or_else(|p| p.into_inner());
+        if *previous != fingerprint {
+            *previous = fingerprint;
+            self.rescan(app);
+        }
+    }
     /// 重新扫描：停掉全部旧循环，为启用插件的每条 cron 表达式各起一个循环。
     pub fn rescan(&self, app: &AppHandle) {
         for f in lock_flags(&self.stop_flags).drain(..) {

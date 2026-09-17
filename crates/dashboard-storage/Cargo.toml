@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+serde = { workspace = true }
 dashboard-domain = { workspace = true }
 rusqlite = { workspace = true }
 chrono = { workspace = true }

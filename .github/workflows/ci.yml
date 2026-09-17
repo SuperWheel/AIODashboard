@@ -21,32 +21,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/desktop/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            apps/desktop/package-lock.json
 
       - name: Rust dependency cache
         uses: Swatinem/rust-cache@v2
 
-      # 与 scripts/check.sh 同构：改门禁时两处同步修改
-      - name: Format
-        run: cargo fmt --all --check
-
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Test
-        run: cargo test --workspace
-
-      - name: Build
-        run: cargo build --workspace
-
-      - name: Frontend test (vitest)
-        working-directory: apps/desktop
+      - name: Install frontend and SDK dependencies
         run: |
-          npm install
-          npm run test
+          npm ci
+          npm ci --prefix apps/desktop
 
-      - name: Frontend build (tsc + vite)
-        working-directory: apps/desktop
-        run: |
-          npm install
-          npm run build
+      - name: Full gate
+        run: bash scripts/check.sh full

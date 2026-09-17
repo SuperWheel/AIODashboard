@@ -12,6 +12,9 @@ pub mod logical_day;
 pub mod note_service;
 pub mod overview_service;
 pub mod plugin_manifest;
+pub mod plugin_network;
+pub mod plugin_package;
+pub mod plugin_runtime;
 pub mod plugin_service;
 pub mod project_service;
 pub mod search_service;
@@ -32,6 +35,8 @@ pub enum CoreError {
     Validation(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    #[error("permission denied: {0}")]
+    PermissionDenied(String),
     #[error("storage error: {0}")]
     Storage(#[from] rusqlite::Error),
 }

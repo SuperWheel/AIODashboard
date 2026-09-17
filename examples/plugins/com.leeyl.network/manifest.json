@@ -1,0 +1,6 @@
+{
+  "id":"com.leeyl.network","name":"网络与设置示例","version":"0.1.0","entry":"main.js","api_version":"plugin.protocol/v2",
+  "description":"通过宿主 GET 代理读取 GitHub 状态；不自动发起请求。",
+  "permissions":{"network":["api.github.com"],"ui":["command","settings"],"storage_quota_bytes":65536},
+  "contributions":{"commands":[{"id":"fetch","title":"读取 GitHub API 状态"}],"settings":[{"id":"preferences","title":"网络示例设置"}]}
+}
