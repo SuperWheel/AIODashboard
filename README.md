@@ -16,7 +16,7 @@ AIODashboard 是个人 All-in-One Dashboard：用任务打卡积累日常进度�
 
 | 任务卡片墙 | 深色工作台 |
 |---|---|
-| ![多种任务卡片](docs/assets/tasks-light.jpg) | ![深色主题的今天页](docs/assets/today-dark.jpg) |
+| ![多种任务卡片](docs/assets/tasks-light-green.jpg) | ![深色主题的今天页](docs/assets/today-dark.jpg) |
 
 ## 一个工作台，几种进入方式
 

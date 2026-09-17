@@ -798,3 +798,10 @@ async 函数里（错误沦为静默 rejection）。教训：**协议文档、�
 - [GitHub CI](https://github.com/SuperWheel/AIODashboard/actions/runs/35220870384) 全部通过；[Pages 部署](https://github.com/SuperWheel/AIODashboard/actions/runs/35220970226) 成功。
 - [项目主页](https://superwheel.github.io/AIODashboard/) 已上线；桌面与 390px 手机宽度检查通过，三种预览切换正常；GitHub README 四张图片成功加载。简介、主题标签、主页地址、自定义社交封面已设置并回读验证。
 - 临时桌面预览实例已退出，日常使用的应用与个人数据未安装或替换。最终文档归档提交不改变已发布二进制，标签保持不动。
+
+
+## [2026-09-17] 任务卡片墙例图统一配色
+
+**需求**：宣传页与 README 的任务墙例图减少杂色，保留彩色 emoji。
+**处理**：通过 release CLI 将独立演示库的六张任务卡全部设为 #059669，重新拍摄真实发行程序界面，替换为 tasks-light-green.jpg 并更新两处引用；不修改用户正式数据或发行程序的自定义颜色能力。
+**验证**：CLI 回读六张演示任务的 color_hex 一致；真实截图中卡片进度、热力、边框与图标底色统一绿色，emoji 原色保留；本地图片签名与引用检查通过。此次只更新展示素材与文档，复用原代码门禁结果。
