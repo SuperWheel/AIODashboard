@@ -86,7 +86,7 @@ function TodayTaskCard({
         }}
       />
       <div className="relative flex items-center gap-2.5 px-3 py-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm opacity-70 grayscale">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm">
           {task.icon || "✓"}
         </span>
         <button
