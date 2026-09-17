@@ -37,3 +37,6 @@ openspec/
 | [001-plugin-system](changes/001-plugin-system/proposal.md) | 插件系统（plugin-system/v1） | 已完成 | 2026-08-30 |
 | [002-ui-redesign-bento](changes/002-ui-redesign-bento/proposal.md) | UI 重设计 · Bento 总控台 | 已完成 | 2026-08-30 |
 | [003-task-checkin-cards](changes/003-task-checkin-cards/proposal.md) | 打卡式任务 + 日期主库 + 四种任务卡片 | 进行中 | — |
+| [007-plugin-platform](changes/007-plugin-platform/proposal.md) | 插件平台演进（plugin-platform/v1.1） | 历史记录，008 接续 | — |
+| [008-plugin-security-hardening](changes/008-plugin-security-hardening/proposal.md) | 插件安全与生命周期加固 | 已完成 | 2026-09-08 |
+| [009-job-tracker-plugin](changes/009-job-tracker-plugin/proposal.md) | 求职台插件：表格、面试与进度管理 | 提案（设计及独立 UI 试用完成，正式领域待实施） | — |

@@ -1,167 +1,136 @@
-# AIODashboard
+<p align="center"><img src="docs/assets/cover.png" alt="AIODashboard — Your day. Your data. Your dashboard." width="100%"></p>
 
-Local-First、AI-Friendly、CLI-First 的个人 All-in-One Dashboard（MVP / macOS 优先）。
+<h1 align="center">AIODashboard</h1>
+<p align="center"><strong>把今天、长期目标和灵感，放进自己的工作台。</strong></p>
+<p align="center">本地优先 · macOS 桌面 · 可扩展插件 · 面向 AI 的 JSON CLI</p>
+<p align="center"><a href="https://github.com/SuperWheel/AIODashboard/releases/tag/v0.1.0">下载 v0.1.0</a> · <a href="https://superwheel.github.io/AIODashboard/">项目主页</a> · <a href="docs/PLUGIN_API.md">插件开发</a> · <a href="https://github.com/SuperWheel/AIODashboard/issues">反馈问题</a></p>
+<p align="center"><a href="https://github.com/SuperWheel/AIODashboard/actions/workflows/ci.yml"><img src="https://github.com/SuperWheel/AIODashboard/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <img src="https://img.shields.io/badge/version-0.1.0-059669" alt="Version 0.1.0"> <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-1b1d23" alt="macOS Apple Silicon"> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a></p>
 
-> 架构原则：**Rust Core 是唯一业务核心**；GUI 与 CLI 是平级客户端；AI 通过稳定 JSON CLI 操作系统；SQLite 是第一阶段唯一事实来源。
+AIODashboard 是个人 All-in-One Dashboard：用任务打卡积累日常进度，用重要日连接长期目标，用笔记与收件箱接住灵感。数据保存在自己的电脑上，桌面界面与 CLI 共用 Rust Core；AI 工具也能通过结构化命令参与工作。
 
-## 技术栈
+## 看看它的样子
 
-| 层级 | 技术 |
+以下为 **v0.1.0 发行构建的真实界面**，使用独立临时数据库中的演示内容。顶部品牌封面是 AI 生成的概念视觉，不代表软件界面。
+
+![今天：任务进度、重要日与最近笔记](docs/assets/today-light.jpg)
+
+| 任务卡片墙 | 深色工作台 |
 |---|---|
-| Desktop | Tauri 2 |
-| GUI | React 18 + TypeScript + Tailwind CSS 4 |
-| Core | Rust（Cargo Workspace） |
-| 数据库 | SQLite（WAL 模式） |
-| CLI | Rust + clap |
+| ![多种任务卡片](docs/assets/tasks-light.jpg) | ![深色主题的今天页](docs/assets/today-dark.jpg) |
 
-## 项目结构
+## 一个工作台，几种进入方式
 
-```text
-crates/
-├── dashboard-domain      # 领域层：Task / Project / Note / InboxItem / ActivityEntry
-├── dashboard-storage     # Infrastructure：SQLite + Repository（唯一允许写 SQL 的地方）
-├── dashboard-core        # Application：所有业务用例（GUI/CLI 共用）
-└── dashboard-protocol    # AI 输出协议：JSON 信封 { success, data, error, meta }
-apps/
-├── cli                   # `dashboard` 命令行（一等公民，面向 AI）
-└── desktop               # Tauri 2 桌面端（src/ 前端 + src-tauri/ 后端）
-```
+| 你想做的事 | v0.1.0 提供的能力 |
+|---|---|
+| 看清今天 | 今日任务、完成率、近一年热力、重要日、最近笔记与活跃项目 |
+| 让习惯持续 | 目标次数、循环规则、打卡与撤销、周/月/年总览、星级与拖拽排序 |
+| 记住重要日 | 倒计时与纪念日、任务归属、综合热力图 |
+| 接住零散信息 | 项目、笔记、收件箱，以及 ⌘K 全局搜索 |
+| 添加自己的工具 | ZIP / 文件夹导入、权限审阅、启停、设置、重载；提供开发示例 |
+| 让 AI 参与 | 稳定 JSON CLI、今日上下文、幂等打卡、来源标记与活动日志 |
 
-数据流（两条链完全一致）：
+**核心数据无需账号或云端服务。** 网络权限插件可按授权访问声明的域名；本地优先并不意味着所有插件都离线。
 
-```text
-React ──Tauri Command──┐
-                       ├──► dashboard-core ──► SQLite (WAL)
-dashboard CLI ─────────┘
-```
+## 下载与安装
 
-CLI 与 GUI 通过共享数据库文件 + WAL 并发 + 前端轮询实现实时同步。
+前往 [v0.1.0 Release](https://github.com/SuperWheel/AIODashboard/releases/tag/v0.1.0)：
 
-## 环境要求
+- **桌面端**：<code>AIODashboard_0.1.0_aarch64.dmg</code>，适用于 Apple Silicon Mac（M1 及以后）。打开后将应用拖入「应用程序」。
+- **CLI**：<code>dashboard_0.1.0_aarch64-apple-darwin.tar.gz</code>，解压后运行 <code>./dashboard --help</code>。
+- **校验**：将附件和 <code>SHA256SUMS.txt</code> 放在同一目录，运行 <code>shasum -a 256 -c SHA256SUMS.txt</code>。
 
-- Rust stable（`rustup` 安装）
-- Node.js ≥ 20
-- macOS（Xcode CLT）
+本次发行未使用 Apple Developer ID 分发签名，也未经过 Apple 公证。macOS 可能提示无法验证开发者；确认来源和校验和后，按系统「隐私与安全性」中的提示处理。无需关闭系统整体安全保护。Intel Mac、Windows 与 Linux 暂无本次发行的预编译包。
 
-## 快速开始
+> **早期版本**：升级前退出应用并备份数据目录。v0.1.0 包含数据库 V8 迁移，旧插件会停用，需要迁移 manifest 并重新审阅权限。[完整发行说明](docs/releases/v0.1.0.md)
 
-### 1. 运行桌面端
+## 让 AI 和你使用同一份数据
 
-```bash
-cd apps/desktop
-npm install
-npm run tauri dev     # 开发模式
-# 或打包： npm run tauri build
-```
+~~~bash
+# 查看今天，输出稳定 JSON
+dashboard context today --json
 
-### 2. 使用 CLI
+# 新建一个每日目标
+dashboard task create --title "喝水" --target 8 --unit 杯 --icon "💧" --json
 
-```bash
-cargo build -p dashboard-cli
-alias dashboard="$PWD/target/debug/dashboard"
+# 用返回的任务 ID 替换占位符；同一 operation-id 重放不重复计数
+dashboard task checkin <task-id> --operation-id drink-water-001 --json
 
-dashboard status
-dashboard task create --title "喝水" --target 8 --unit 杯 --icon 🥤
-dashboard task checkin tsk_xxx   # 打卡 +1（幂等）
-dashboard task overview tsk_xxx --period week
-dashboard library create --title "考研" --kind countdown --anchor 2026-12-21
-dashboard context today          # AI 一键获取当前状态
-```
+# AI 操作留下来源记录
+DASHBOARD_ACTOR=ai dashboard task create --title "整理本周笔记" --json
+dashboard activity list --actor ai --json
+~~~
 
-### 3. AI / Agent 接入
+业务命令支持 <code>--json</code>；信封为 <code>{ success, data, error, meta }</code>，当前 <code>meta.schema_version</code> 为 <code>"6"</code>。退出码：0 成功、1 一般错误、2 参数错误、3 不存在、4 权限拒绝、5 冲突。GUI 会轮询共享数据，展示 CLI 的变更。
 
-所有命令支持 `--json`，返回稳定信封：
+AI-Friendly 指可供外部 AI 工具调用的接口；应用没有内置大模型聊天、模型订阅或自动代理执行。
 
-```bash
-$ dashboard task list --json
-{
-  "success": true,
-  "data": [ { "id": "tsk_…", "title": "…", "status": "active", "card_style": "day", "color_hex": "#4A90E2" } ],
-  "error": null,
-  "meta": { "schema_version": "2" }
-}
-```
+## 按自己的需要扩展
 
-- **Exit Code**：`0` 成功 · `1` 一般错误 · `2` 参数错误 · `3` 数据不存在 · `5` 冲突
-- **stdin**：`echo '{"title":"...","target":8,"unit":"杯"}' | dashboard task create --stdin`
-- **Dry Run**：`dashboard task delete <id> --dry-run`
-- **幂等打卡**：`dashboard task checkin <id> --operation-id <key>`（重放不重复计数）
-- **操作来源标记**：`DASHBOARD_ACTOR=ai dashboard task checkin tsk_xxx`（写入审计日志）
+从「插件 → 导入插件」选择 ZIP 或文件夹，查看版本与权限，再确认安装。新装或替换后默认停用，经审阅启用才加载。参考 [插件开发手册](docs/PLUGIN_API.md) 编写自己的扩展。
 
-> 协议 v3（2026-08-31）：Task 增 recurrence 字段，`task create/update` 增 `--recurrence/--weekdays`
-> 协议 v2（2026-08-30）：任务从 todo 改为长期打卡对象。`complete/reopen` 保留为重映射别名
-> （补满今日目标 / 今日清零），输出带 `deprecated` 提示；`--due`、`--today/--overdue` 已移除。
+~~~bash
+dashboard plugin new com.example.my-tool --template ts
+dashboard plugin dev ./com.example.my-tool
+dashboard plugin install ./com.example.my-tool.zip
+dashboard plugin safe-mode  # 故障时停用全部插件，随后重启应用
+~~~
 
-推荐 Agent 工作流：
+当前为 **Trusted WebView**：插件与宿主共享 WebView，只运行可信代码；权限检查不等于进程级沙箱。回滚使用 CLI。公共 SDK/test 版本 0.2.0、插件协议 plugin.protocol/v2 与应用版本 0.1.0 分别管理。
 
-```bash
-dashboard context today --json   # 1. 了解现状
-# …AI 分析规划…
-DASHBOARD_ACTOR=ai dashboard task create --title "…"   # 2. 执行修改
-dashboard activity list --actor ai                     # 3. 可审计
-```
+番茄钟示例尚未完成，不预装，也不作为本次发行的可用功能。「求职台·试用」示例是演示 UI，重载会恢复样本，不能用于保存真实求职进度。
 
-GUI 每 4 秒自动轮询刷新，CLI/AI 的修改会自动出现在界面上。
+## 从源码运行
 
-## 数据位置
+需要 Rust stable、Node.js ≥ 20，以及 macOS Command Line Tools。
 
-- 数据库：`~/Library/Application Support/AIODashboard/dashboard.db`
-- Widget 快照：`~/Library/Group Containers/group.com.aiodashboard.shared/widget-snapshot.json`（不存在则写入数据库同目录 `widget/`）
-- 覆盖：环境变量 `DASHBOARD_DB_PATH`、`DASHBOARD_WIDGET_SNAPSHOT_PATH`
+~~~bash
+git clone https://github.com/SuperWheel/AIODashboard.git
+cd AIODashboard
+npm ci
+npm ci --prefix apps/desktop
+npm run tauri dev --prefix apps/desktop
 
-Widget Snapshot 协议（`widget.snapshot/v1`）：
+# CLI 与发行构建
+cargo build --release -p dashboard-cli
+./target/release/dashboard --help
+bash scripts/check.sh full
+npm run tauri build --prefix apps/desktop
+~~~
 
-```json
-{
-  "schema": "widget.snapshot/v1",
-  "generated_at": "2026-08-22T08:49:08Z",
-  "today": {
-    "date": "2026-08-22",
-    "task_total": 5,
-    "task_completed_today": 3,
-    "completion_rate": 0.62,
-    "missed_last_7d": 2,
-    "inbox_open": 4,
-    "next_event": null,
-    "current_focus": "Dashboard MVP"
-  }
-}
-```
+## 本地数据与架构
 
-每次任务/收件箱变更后自动重新生成，供未来 SwiftUI WidgetKit 直接读取展示。
+- 数据库：<code>~/Library/Application Support/AIODashboard/dashboard.db</code>（SQLite WAL）。
+- 插件：默认位于数据库同目录的 <code>plugins/</code>。
+- 路径覆盖：<code>DASHBOARD_DB_PATH</code>、<code>DASHBOARD_PLUGINS_DIR</code>、<code>DASHBOARD_WIDGET_SNAPSHOT_PATH</code>。
+- Widget Snapshot 已提供文件协议；原生 WidgetKit 小组件尚未交付。
 
-## MVP 功能范围
+~~~text
+React GUI ── Tauri Commands ──┐
+                             ├── Rust Core ── Storage ── SQLite
+JSON CLI ────────────────────┘       └── Activity Log / Widget Snapshot
+~~~
 
-- ✅ Task（打卡式）：创建(目标/单位/图标/主题色/循环规则) / 打卡+1 / 减少 / 撤销 / 周月年总览 / 归档恢复 / 四种卡片
-- ✅ 循环规则（004）：每天 / 每周(可选星期几) / 每月 / 每年 / 一次性（完成自动归档）；非适用日不进 Today、打卡被拒、统计记不适用
-- ✅ DateLibrary：纪念日 / 倒计时日重要日、任务归属（历史留痕）、综合热力图、归档三选一
-- ✅ Project：创建 / 归档 / 删除 / 进行中任务数统计
-- ✅ Note：创建 / 编辑 / 删除 / 最近列表
-- ✅ Inbox：快速收集 / 转 Task / 转 Note / 删除
-- ✅ Today 页：今日待办、逾期提醒、快速添加、统计卡片
-- ✅ Unified Search：⌘K 全局搜索（任务/项目/笔记/收件箱）
-- ✅ Context 系统：`dashboard context today`
-- ✅ Activity Log：全量审计（区分 user/cli/ai/automation/system）
-- ✅ Widget Snapshot：V1 协议 + 文件输出
+| 路径 | 职责 |
+|---|---|
+| crates/dashboard-domain | 领域模型 |
+| crates/dashboard-storage | SQLite 与 Repository，唯一 SQL 层 |
+| crates/dashboard-core | GUI / CLI 共用业务规则 |
+| crates/dashboard-protocol | JSON 信封与退出码 |
+| apps/desktop / apps/cli | 桌面与命令行客户端 |
+| packages / examples/plugins | 插件 SDK、测试工具与示例 |
 
-## 开发
+更多：[架构说明](docs/architecture.md) · [开发日志](docs/dev-log.md) · [贡献指南](CONTRIBUTING.md) · [AI 协作约定](AGENTS.md)
 
-```bash
-bash scripts/check.sh   # 机械门禁：fmt → clippy → test → build → 前端 build（交付前必须全绿）
-cargo test              # 单元测试 + 端到端链路集成测试（§31 四条链）
-cargo build -p dashboard-cli   # 只构建 CLI
-```
+## 接下来
 
-- 架构细节：`docs/architecture.md`
-- AI 协作约定与开发流程分级：`AGENTS.md`
-- 开发日志：`docs/dev-log.md`
+- [ ] 原生 macOS WidgetKit 小组件
+- [ ] 更完整的 AI 接口与自动化工作流
+- [ ] 第三方插件隔离与分发体验
+- [ ] Calendar / GitHub / Email 等集成
+- [ ] 按实际需求探索跨设备同步
 
-## Roadmap
+以上为方向，尚未作为 v0.1.0 功能交付。欢迎通过 [Issues](https://github.com/SuperWheel/AIODashboard/issues) 提交问题与使用场景。
 
-按设计文档阶段推进：
+## 许可证
 
-- Phase 2：AI Interface 完善（--request-id 幂等、权限策略、JSON Schema）
-- Phase 3：macOS Native —— SwiftUI + WidgetKit 小组件（消费现有 snapshot 协议）
-- Phase 4：Automation（Trigger → Condition → Action）
-- Phase 5：第三方集成（Calendar / GitHub / Email）
-- Phase 6：跨设备同步（确有需求再做）
+[MIT](LICENSE) © 2026 SuperWheel

@@ -30,7 +30,7 @@ apps/
 └── desktop/              # Tauri 2：src/(React) + src-tauri/(Interface 层)
 openspec/                 # Spec 变更包：changes/<NNN-slug>/ 四件套（proposal/spec/design/tasks）
 docs/                     # architecture.md / dev-log.md / plans/ / PLUGIN_API.md
-scripts/check.sh          # 机械门禁（与 CI 同构）
+scripts/check.sh          # 分层门禁（frontend / rust / full；full 与 CI 同构）
 .github/workflows/ci.yml  # CI（push/PR 自动跑同一套检查）
 ```
 
@@ -66,7 +66,9 @@ scripts/check.sh          # 机械门禁（与 CI 同构）
 ## 常用命令
 
 ```bash
-bash scripts/check.sh          # 机械门禁：fmt → clippy(-D warnings) → test → build → 前端 build
+bash scripts/check.sh frontend # 纯 React / TypeScript / CSS 改动：vitest + 前端 build
+bash scripts/check.sh rust     # 纯 Rust 改动：fmt + clippy + test + build
+bash scripts/check.sh full     # 跨层、协议、迁移、发布：完整门禁
 cargo test --workspace         # 只跑 Rust 测试
 cd apps/desktop && npm run tauri dev    # 启动桌面端
 cargo build -p dashboard-cli && target/debug/dashboard --help   # CLI
@@ -78,16 +80,16 @@ cargo build -p dashboard-cli && target/debug/dashboard --help   # CLI
 
 | 任务举例 | 模式 | 要求 |
 |---|---|---|
-| 改文案 / Tailwind 微调 / 小 bug | Vibe | 说清现状与预期；完成后 AI 自述改动；跑 check.sh |
+| 改文案 / Tailwind 微调 / 小 bug | Vibe | 说清现状与预期；完成后 AI 自述改动；跑最小相关门禁 |
 | 新增 CLI 子命令 / 新增视图 / 单个 command | Plan | 先复述需求+分步计划确认；补对应测试；记 dev-log |
 | 新领域模块(Habit/Calendar…) / schema 变更 / AI 协议变更 / daemon | Spec | Why→What→Unknown 提案确认后：spec(ADDED/MODIFIED/REMOVED)→tasks 逐项勾选；TDD：先测试用例确认再实现 |
 
 判断三问：①新功能还是修改？②影响其他模块吗？③一个月后自己还看得懂吗？
 任一"新功能/跨模块/不确定" → 至少 Plan；涉及协议/schema/新模块 → Spec。
 
-对话流程：说需求 → AI 复述确认 → 审阅计划 → 执行 → 跑门禁验证 → 记 dev-log。
+对话流程：说需求 → AI 复述确认 → 审阅计划 → 执行 → 跑最小相关门禁 → 记 dev-log。
 反模式：不看计划直接执行、一次生成全部代码、AI 报错后人肉改代码（应把报错喂回）、
-攒大 diff 不切片提交、只跑 type-check 就宣称交付（必须完整 build）。
+攒大 diff 不切片提交、同一批改动反复跑未变更层、只跑 type-check 就宣称交付。
 
 **文档落位**：Spec 级任务在 `openspec/changes/<NNN-slug>/` 建变更包，固定四件套
 `proposal / spec / design / tasks`（规则与索引见 `openspec/README.md`，格式对齐 OpenSpec）；
@@ -100,14 +102,16 @@ Plan 级任务在 `docs/plans/` 建档（命名 `YYYY-MM-DD-<slug>.md`，从 `_T
 - Plan 级：新增功能必须有对应测试（core 单测 或 integration.rs 链路测试）+ 人工验证核心路径。
 - Spec 级：TDD——先让 AI 生成测试用例清单并确认，再实现；测试不过自动修复（≤3 轮）后继续。
 - 纯逻辑优先可测：日期边界、过滤排序等抽成纯函数放 core/context_service 这类无 UI 模块。
-- 门禁定义交付：`bash scripts/check.sh` 全绿才算完成；口头"应该没问题"无效。
+- 门禁按本次影响面执行：纯前端用 `frontend`，纯 Rust 用 `rust`，跨层/协议/迁移/发布用 `full`。
+- 同一批改动中，某范围已经通过且相关文件未再变化时直接复用结果，不重复跑；回归测试本身保留。
+- 相关范围门禁通过才算完成；口头"应该没问题"无效。
 
 ## Git 纪律
 
 - 大改动按可验证切片提交，建议顺序：修复 → core 功能 → CLI → 前端 → 工具链/CI → 文档。
 - 一个 commit 不混多个意图；拆分重构 PR 禁止夹带新功能。
-- 当前仓库尚未 `git init`：首次初始化后建议接 GitHub 并启用 `.github/workflows/ci.yml`
-  （workflow 文件推送需要 token 带 `workflow` scope）。
+- GitHub：`SuperWheel/AIODashboard`，主分支 `main`；CI 使用 `.github/workflows/ci.yml`。
+  发布必须先通过 full 门禁，核对标签、附件和 SHA-256；workflow 推送需要相应权限。
 
 ## 当前状态
 
@@ -132,7 +136,7 @@ Task / Project / Note / Inbox / Today / Search + GUI + CLI --json + Widget Snaps
 ```text
 约束：
 1. 先对齐再动手：先复述需求和分步计划，确认后再执行。
-2. 交付前必须跑 bash scripts/check.sh 全绿（fmt/clippy/test/build/前端 build 缺一不可）。
+2. 交付前跑最小相关门禁：纯前端=frontend、纯 Rust=rust、跨层/协议/迁移/发布=full；已通过且未变化的范围不重复跑。
 3. 架构红线不可绕过：SQL 只在 storage、业务只在 core、前端不碰 DB、变更必留 activity log。
 4. 新实体走六层 Checklist，并在 apps/cli/tests/integration.rs 补链路测试。
 5. CLI --json 输出是 AI 公共 API：改字段属 Spec 级变更，需升 schema_version。

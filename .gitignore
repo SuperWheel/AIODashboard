@@ -21,3 +21,10 @@ apps/desktop/src-tauri/gen/
 # Editor
 .idea/
 .vscode/
+
+# Local credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
